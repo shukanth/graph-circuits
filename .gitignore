@@ -1,0 +1,11 @@
+# =============================================================================
+# Project-specific
+# =============================================================================
+# Claude Code instructions (personal, not for collaborators)
+CLAUDE.md
+ 
+# Claude Code session exports (keep locally, don't commit)
+session-logs/
+
+# pdf files from research
+refs/
