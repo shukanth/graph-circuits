@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mechinterp"
+version = "0.1.0"
+description = "Mechanistic interpretability of shortest-path reasoning in small transformers"
+requires-python = ">=3.11"
+dependencies = [
+    "jax",
+    "jax-metal",   # Apple Silicon Metal backend — Mac-only, no CUDA equivalent
+    "flax",
+    "optax",
+    "networkx",
+    "wandb",
+    "marimo",
+    "plotly",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

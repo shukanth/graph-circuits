@@ -3,9 +3,28 @@
 # =============================================================================
 # Claude Code instructions (personal, not for collaborators)
 CLAUDE.md
- 
+
 # Claude Code session exports (keep locally, don't commit)
 session-logs/
 
-# pdf files from research
-refs/
+# Experiment artifacts — large, not version-controlled
+checkpoints/
+wandb/
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Virtual environment
+.venv/
+
+# Notebooks
+.marimo/
+
+# macOS
+.DS_Store
