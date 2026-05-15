@@ -1,0 +1,604 @@
+% =============================================================================
+% Mechanistic Interpretability of Shortest-Path Reasoning
+% Technical Documentation
+% =============================================================================
+
+\documentclass[11pt, a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage[colorlinks=true, linkcolor=blue, urlcolor=blue]{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{microtype}
+
+\geometry{margin=2.5cm}
+
+% Code listing style
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{teal},
+  breaklines=true,
+  frame=single,
+  framesep=4pt,
+  backgroundcolor=\color{gray!5},
+  language=Python,
+}
+
+% Math operators
+\DeclareMathOperator{\softmax}{softmax}
+\DeclareMathOperator{\LN}{LN}
+
+\title{%
+  \textbf{Mechanistic Interpretability of\\Shortest-Path Reasoning in a Small Transformer}\\[0.5em]
+  \large Technical Documentation
+}
+\author{shukanth2004@gmail.com}
+\date{Last updated: \today}
+
+% =============================================================================
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Project Overview}
+% =============================================================================
+
+This project trains a small transformer from scratch to compute
+\textbf{shortest-path lengths on directed graphs}, then
+\textbf{reverse-engineers the algorithm it learns} using mechanistic
+interpretability techniques. It is both a portfolio project and a learning
+exercise in JAX/Flax and the circuits framework.
+
+\subsection{Research motivation}
+
+Two prior bodies of work motivate this project.
+
+\textbf{Grokking} \cite{power2022grokking}: small transformers trained on
+algorithmic tasks can exhibit a phase transition — training accuracy saturates
+quickly (memorisation), but validation accuracy remains near zero for thousands
+of additional steps before suddenly jumping to near-perfect generalisation. This
+delayed generalisation is called \emph{grokking}. Power et al.\ identified
+weight decay, learning rate, and dataset size as the critical hyperparameters.
+The setting here (shortest path on directed graphs) is a novel algorithmic task
+not explored in the original grokking literature.
+
+\textbf{Transformer circuits} \cite{elhage2021mathematical}: Elhage et al.\
+established a mathematical framework for decomposing transformer computations
+into interpretable circuits. 2-layer attention-only transformers are the right
+complexity level for full reverse-engineering: the QK (query-key) and OV
+(output-value) circuits can be explicitly computed and labelled, and
+\emph{induction heads} --- a canonical circuit that arises in 2-layer models
+--- provide a concrete example of cross-layer composition.
+
+\subsection{Novelty}
+
+Prior grokking work used modular arithmetic and group composition as the
+algorithmic task. Graph reasoning --- specifically, whether a transformer
+learns a BFS-like algorithm to determine reachability and shortest paths
+--- is largely unexplored from a circuits perspective. The use of
+\textbf{directed} graphs is deliberate: asymmetric reachability
+(edge $A \to B$ does not imply $B \to A$) blocks symmetry shortcuts and
+forces richer internal circuits, making the learned algorithm more
+interesting to interpret.
+
+\subsection{Tech stack}
+
+\begin{itemize}[noitemsep]
+  \item \textbf{JAX + Flax (\texttt{nnx})} --- model definition and training.
+        Chosen as a learning goal; the functional paradigm maps cleanly onto
+        the project's pure-function coding conventions and makes gradient
+        surgery (needed in Phase 3) straightforward.
+  \item \textbf{Optax} --- optimizers. AdamW with weight decay $\approx 1.0$
+        is the known-good setting from the grokking paper.
+  \item \textbf{NetworkX} --- graph generation and ground-truth BFS labels.
+  \item \textbf{Weights \& Biases} --- experiment tracking for long runs.
+  \item \textbf{Marimo} --- reactive notebooks for interpretability analysis.
+  \item \textbf{Plotly / Matplotlib} --- figures.
+\end{itemize}
+
+% =============================================================================
+\section{Task Formulation}
+% =============================================================================
+
+\subsection{Formal definition}
+
+Let $G = (V, E)$ be a directed unweighted graph with $|V| = n$ nodes
+(labelled $0, \ldots, n-1$) and $E \subseteq V \times V$ (no self-loops).
+Given a source node $s \in V$ and destination node $d \in V$ with $s \neq d$,
+the task is to predict
+\[
+  y = \begin{cases}
+    \text{dist}(s, d) & \text{if } d \text{ is reachable from } s, \\
+    \texttt{INF}      & \text{otherwise,}
+  \end{cases}
+\]
+where $\text{dist}(s, d)$ is the length (number of edges) of the shortest
+directed path from $s$ to $d$.
+
+\subsection{Input representation}
+
+The graph is presented to the model as a \textbf{shuffled sequence of edge
+tokens}, not as an adjacency matrix or edge list in a fixed order. Shuffling
+is intentional: it prevents the model from exploiting positional shortcuts
+(e.g., ``the answer-relevant edge is always at position 3'') and forces it
+to learn a truly order-invariant algorithm.
+
+\subsection{Output space}
+
+For $n$ nodes, the possible output values are $\{1, 2, \ldots, n-1\}$ (path
+lengths) and \texttt{INF} (unreachable). A path of length 0 is impossible
+since $s \neq d$ is enforced. The model therefore performs a
+$(n-1+1) = n$-class classification over a vocabulary that includes all
+integers up to $n-1$ plus the \texttt{INF} token.
+
+\subsection{Generalisation criterion}
+
+The train/validation split is \textbf{by graph structure}: all queries
+$(s, d)$ on a given graph $G$ are assigned to the same split. The model is
+never tested on a query from a graph it has seen --- only on queries from
+entirely unseen graph topologies. This is strictly harder than splitting by
+query permutation.
+
+% =============================================================================
+\section{Data Pipeline}
+% =============================================================================
+
+The data pipeline lives in \texttt{src/data/} and is built from three modules:
+\texttt{graphs.py} (graph generation and ground-truth labels),
+\texttt{tokenizer.py} (vocabulary and sequence encoding), and
+\texttt{dataset.py} (assembly and splitting).
+
+\subsection{Graph generation (\texttt{src/data/graphs.py})}
+
+\subsubsection{\texttt{sample\_graph}}
+
+\begin{lstlisting}
+def sample_graph(n_nodes: int, density: float,
+                 rng: np.random.Generator) -> nx.DiGraph
+\end{lstlisting}
+
+Samples a random directed graph by drawing
+$\lfloor \text{density} \times n(n-1) \rfloor$ edges uniformly at random from
+the $n(n-1)$ possible directed edges (no self-loops). The \texttt{density}
+parameter is a fraction of the maximum possible edges rather than an absolute
+count, so the generator scales cleanly when $n$ increases without re-tuning
+the range.
+
+\subsubsection{\texttt{all\_pair\_distances}}
+
+\begin{lstlisting}
+def all_pair_distances(G: nx.DiGraph
+) -> dict[tuple[int, int], Optional[int]]
+\end{lstlisting}
+
+Computes the shortest-path length for every ordered pair $(s, d)$ with
+$s \neq d$ using NetworkX's \texttt{single\_source\_shortest\_path\_length}
+(BFS). Returns \texttt{None} for unreachable pairs. This function is the sole
+source of ground-truth labels; its correctness is critical.
+
+\subsection{Tokenisation scheme (\texttt{src/data/tokenizer.py})}
+
+\subsubsection{Vocabulary}
+
+For a graph with $n$ nodes, the vocabulary has $n + 4$ tokens:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+Token ID & Symbol & Meaning \\
+\midrule
+$0, 1, \ldots, n-1$ & node IDs & node $i$ appears as token $i$ \\
+$n$                 & \texttt{EDGE}  & marks the start of an edge triple \\
+$n+1$               & \texttt{QUERY} & marks the start of the query pair \\
+$n+2$               & \texttt{PAD}   & padding to fixed sequence length \\
+$n+3$               & \texttt{INF}   & unreachable output label (output only) \\
+\bottomrule
+\end{tabular}
+\caption{Vocabulary for $n$-node graphs. For the baseline setting $n=6$,
+  vocab size $= 10$.}
+\end{table}
+
+\texttt{INF} is an output-only label token --- it never appears in input
+sequences. Placing it inside the vocabulary (rather than using a separate
+classification head) means the output head is a single linear layer over
+\texttt{vocab\_size} logits, which simplifies the model definition and keeps
+the output space uniform.
+
+\subsubsection{Sequence format}
+
+Each training sample is a fixed-length integer sequence of the form:
+
+\[
+  \underbrace{[\texttt{EDGE},\, u_1,\, v_1]}_{\text{edge 1}}\;
+  \underbrace{[\texttt{EDGE},\, u_2,\, v_2]}_{\text{edge 2}}\;
+  \cdots\;
+  \underbrace{[\texttt{PAD},\, \texttt{PAD},\, \texttt{PAD}]}_{\text{padding}}\;
+  \cdots\;
+  \underbrace{[\texttt{QUERY},\, s,\, d]}_{\text{query}}
+\]
+
+\noindent The sequence length is always
+$L = 3 \times E_{\max} + 3$,
+where $E_{\max} = \lfloor \rho_{\max} \times n(n-1) \rfloor$ and
+$\rho_{\max}$ is the upper end of the density range.
+
+The fixed length is required for JAX JIT compilation, which traces shapes
+statically. The \texttt{EDGE} marker makes each edge a self-contained unit;
+attention heads can learn to key off \texttt{EDGE} tokens to locate edges,
+which is directly interpretable as a circuit.
+
+\paragraph{Baseline numbers.} For $n = 6$ and density range $[0.27, 0.50]$:
+\[
+  E_{\max} = \lfloor 0.50 \times 30 \rfloor = 15,
+  \qquad
+  L = 3 \times 15 + 3 = 48,
+  \qquad
+  |\mathcal{V}| = 10.
+\]
+
+\subsubsection{Edge shuffling}
+
+Edges are shuffled \textbf{independently per sample}: a random permutation of
+the graph's edge list is drawn for each $(s, d)$ query. This prevents the
+model from learning position-based shortcuts (e.g., attending only to the
+first few edge triples). The permutation is passed explicitly into
+\texttt{encode} rather than generated internally, following the JAX convention
+of explicit randomness.
+
+\subsubsection{\texttt{encode}}
+
+\begin{lstlisting}
+def encode(G: nx.DiGraph, src: int, dst: int,
+           vocab: Vocab, max_edges: int,
+           edge_order: np.ndarray) -> np.ndarray
+\end{lstlisting}
+
+Encodes a graph and query into a token array of shape $(\,L,\,)$. Fills a
+\texttt{PAD}-initialised buffer, writes each edge triple at position
+$3i, 3i+1, 3i+2$ for $i \in \{0, \ldots, |E|-1\}$ (in the order given by
+\texttt{edge\_order}), then writes \texttt{[QUERY, src, dst]} at the last
+three positions.
+
+\subsubsection{\texttt{decode\_edges} and \texttt{decode\_query}}
+
+\begin{lstlisting}
+def decode_edges(tokens, vocab, max_edges) -> list[tuple[int, int]]
+def decode_query(tokens, max_edges)         -> tuple[int, int]
+\end{lstlisting}
+
+Inverse operations used in round-trip tests: scan positions
+$0, 3, 6, \ldots, 3(E_{\max}-1)$ for \texttt{EDGE} tokens to recover the
+edge list; read positions $3E_{\max}+1$ and $3E_{\max}+2$ for the query.
+
+\subsection{Dataset assembly (\texttt{src/data/dataset.py})}
+
+\subsubsection{\texttt{generate\_dataset}}
+
+\begin{lstlisting}
+def generate_dataset(n_nodes: int, n_graphs: int,
+    density_range: tuple[float, float] = (0.27, 0.50),
+    val_fraction: float = 0.2,
+    seed: int = 42) -> Dataset
+\end{lstlisting}
+
+Returns a \texttt{Dataset} dataclass with fields:
+
+\begin{itemize}[noitemsep]
+  \item \texttt{train\_tokens}, \texttt{val\_tokens}: integer arrays of shape
+        $(N_{\text{split}}, L)$.
+  \item \texttt{train\_labels}, \texttt{val\_labels}: integer arrays of shape
+        $(N_{\text{split}},)$, values in
+        $\{1, \ldots, n-1\} \cup \{$\texttt{vocab.inf}$\}$.
+  \item \texttt{train\_graph\_ids}, \texttt{val\_graph\_ids}: graph identity
+        arrays used to verify split integrity in tests.
+  \item \texttt{vocab}: the \texttt{Vocab} object.
+  \item \texttt{max\_edges}: $E_{\max}$.
+\end{itemize}
+
+Total samples $= n_{\text{graphs}} \times n(n-1)$ (all ordered pairs
+$s \neq d$ over every graph).
+
+\subsubsection{Split procedure}
+
+Graph indices $0, \ldots, n_{\text{graphs}}-1$ are randomly permuted before
+any data is generated. The first $\lfloor 0.2 \times n_{\text{graphs}} \rfloor$
+permuted indices are assigned to validation; all queries on those graphs go to
+val. This ensures no graph appears in both splits, which is verified by the
+\texttt{test\_no\_graph\_leaks} test.
+
+\subsubsection{Dataset statistics (baseline: $n=6$, $n_{\text{graphs}}=100$)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lr@{}}
+\toprule
+Statistic & Value \\
+\midrule
+Sequence length $L$           & 48 \\
+Vocabulary size               & 10 \\
+INF label fraction            & 18.77\% \\
+Samples per graph             & 30 \\
+\bottomrule
+\end{tabular}
+\caption{Empirical dataset statistics for the baseline configuration.}
+\end{table}
+
+The INF ratio of 18.77\% is healthy: the model must genuinely learn
+reachability (the task is not degenerate in either direction). The acceptable
+range is 10--60\%; this is enforced by a test assertion.
+
+% =============================================================================
+\section{Model Architecture}
+% =============================================================================
+
+The model is a 2-layer attention-only transformer defined in
+\texttt{src/model/transformer.py}.
+
+\subsection{Design rationale}
+
+\textbf{Attention-only (no MLP):} MLP layers in transformers implement
+non-linear feature lookup (superposition of many features); they are the
+hardest component to interpret mechanistically. Removing them brings the model
+to the complexity level analysed in \cite{elhage2021mathematical}: every
+computation is expressible as a sum of rank-1 updates to the residual stream,
+making the QK and OV circuits fully analysable.
+
+\textbf{2 layers:} One layer is insufficient for composition (a 1-layer model
+cannot implement induction heads). Three or more layers makes circuit
+enumeration combinatorially harder. Two layers is the known-good setting for
+full circuit analysis in the circuits framework.
+
+\textbf{Bidirectional attention (no causal mask):} This is a classification
+task, not generation. Every edge token should be able to influence the output
+position without restriction. Causal masking would prevent early-position
+edges from being queried by the final position, which would hurt performance
+without interpretability benefit.
+
+\textbf{Output from the final token:} The answer is read from the last token
+position (the \texttt{dst} node). After two layers, \texttt{dst} has attended
+to all edge tokens; it is the natural ``answer position.''
+
+\subsection{Implementation notes}
+
+\textbf{\texttt{nnx.List} for the layer stack:}
+In Flax nnx, \texttt{Module} inherits from \texttt{Pytree}. JAX pytrees
+distinguish between \emph{structure} (static metadata) and \emph{leaves}
+(data/parameters). A plain Python \texttt{list} is treated as static structure,
+so assigning a list of modules to \texttt{self.layers} raises a \texttt{ValueError}
+at construction time. The fix is \texttt{nnx.List}, which explicitly marks the
+container as data. It is otherwise identical to a Python list (iterable,
+indexable).
+
+\textbf{CPU platform for tests:}
+\texttt{jax-metal} (Apple Silicon) does not support \texttt{int64} array
+creation, which JAX uses internally when seeding RNG keys (\texttt{nnx.Rngs}).
+Tests are forced to CPU via \texttt{os.environ["JAX\_PLATFORMS"] = "cpu"} in
+\texttt{tests/conftest.py}. The training script will handle Metal platform
+selection explicitly.
+
+\subsection{Configuration (\texttt{ModelConfig})}
+
+\begin{lstlisting}
+@dataclass
+class ModelConfig:
+    vocab_size: int       # n_nodes + 4
+    seq_len: int          # 3 * max_edges + 3
+    d_model: int = 128    # residual stream dimension
+    n_heads: int = 2      # attention heads per layer
+    n_layers: int = 2     # number of transformer layers
+\end{lstlisting}
+
+$d_{\text{head}} = d_{\text{model}} / n_{\text{heads}} = 64$.
+
+\subsection{Token and positional embeddings}
+
+\[
+  x = W_E[\texttt{tokens}] + W_{\text{pos}}[\mathbf{p}],
+  \qquad
+  \mathbf{p} = (0, 1, \ldots, L-1),
+\]
+
+where $W_E \in \mathbb{R}^{|\mathcal{V}| \times d}$ is the token embedding
+matrix and $W_{\text{pos}} \in \mathbb{R}^{L \times d}$ is a learned
+positional embedding table. Both are standard \texttt{nnx.Embed} modules.
+Positional embeddings are learned (not sinusoidal) because the task has no
+inherent periodic structure.
+
+\subsection{Multi-head self-attention (\texttt{MultiHeadAttention})}
+
+For input $x \in \mathbb{R}^{B \times L \times d}$, a single attention layer
+with $H$ heads and head dimension $d_h = d / H$ computes:
+
+\begin{align}
+  Q_h &= x W_Q^h, \quad K_h = x W_K^h, \quad V_h = x W_V^h,
+  \quad W_Q^h, W_K^h, W_V^h \in \mathbb{R}^{d \times d}, \\[4pt]
+  A_h &= \softmax\!\left(\frac{Q_h K_h^\top}{\sqrt{d_h}}\right) \in \mathbb{R}^{B \times H \times L \times L}, \\[4pt]
+  z_h &= A_h V_h \in \mathbb{R}^{B \times H \times L \times d_h}, \\[4pt]
+  \text{out} &= \operatorname{concat}[z_1, \ldots, z_H] \, W_O,
+  \quad W_O \in \mathbb{R}^{d \times d}.
+\end{align}
+
+Note: projections are written as $(B \times L \times d)(d \times d) = B \times L \times d$ for clarity; in practice heads share the weight matrices and are split/merged via reshape. \textbf{No biases} are used on $W_Q, W_K, W_V, W_O$: bias-free projections keep the circuit equations clean (no additive offset terms to track when decomposing attention heads into QK/OV components).
+
+\subsection{Transformer layer (\texttt{TransformerLayer})}
+
+\[
+  x \leftarrow x + \text{MHA}\!\left(\LN(x)\right),
+\]
+
+where $\LN$ is layer normalisation and MHA is the attention block above.
+Pre-norm (normalise before attention, not after) is more stable during
+training than post-norm.
+
+\subsection{Full forward pass (\texttt{ShortestPathTransformer})}
+
+\begin{align}
+  x^{(0)} &= W_E[\text{tokens}] + W_{\text{pos}} \\
+  x^{(l)} &= x^{(l-1)} + \text{MHA}_l\!\left(\LN_l\!\left(x^{(l-1)}\right)\right),
+  \quad l = 1, 2 \\
+  \text{logits} &= W_U\, \LN_{\text{final}}\!\left(x^{(2)}_{-1}\right)
+  \in \mathbb{R}^{B \times |\mathcal{V}|}
+\end{align}
+
+The subscript $-1$ denotes the last token position (the \texttt{dst} token).
+$W_U \in \mathbb{R}^{d \times |\mathcal{V}|}$ is the unembedding matrix (no
+bias). Cross-entropy loss is computed over the full vocabulary.
+
+\subsection{Parameter count}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Component & Shape & Count \\
+\midrule
+$W_E$ (token embedding)      & $10 \times 128$   & 1{,}280  \\
+$W_{\text{pos}}$ (positional) & $48 \times 128$   & 6{,}144  \\
+\midrule
+Layer 1 $W_Q$                & $128 \times 128$  & 16{,}384 \\
+Layer 1 $W_K$                & $128 \times 128$  & 16{,}384 \\
+Layer 1 $W_V$                & $128 \times 128$  & 16{,}384 \\
+Layer 1 $W_O$                & $128 \times 128$  & 16{,}384 \\
+Layer 1 LayerNorm ($\gamma, \beta$) & $2 \times 128$ & 256  \\
+\midrule
+Layer 2 (same as Layer 1)    & ---               & 65{,}792 \\
+\midrule
+Final LayerNorm              & $2 \times 128$    & 256      \\
+$W_U$ (unembedding)          & $128 \times 10$   & 1{,}280  \\
+\midrule
+\textbf{Total}               &                   & \textbf{140{,}288} \\
+\bottomrule
+\end{tabular}
+\caption{Parameter count for the baseline model
+  ($d=128$, $H=2$, 2 layers, $n=6$).}
+\end{table}
+
+% =============================================================================
+\section{Testing}
+% =============================================================================
+
+\subsection{Data tests (\texttt{tests/test\_data.py})}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Test & What it checks \\
+\midrule
+\texttt{test\_sample\_graph\_node\_count}     & graph has exactly $n$ nodes \\
+\texttt{test\_sample\_graph\_no\_self\_loops} & no self-loops \\
+\texttt{test\_sample\_graph\_edge\_count}     & edge count matches $\lfloor \rho \times n(n-1) \rfloor$ \\
+\texttt{test\_labels\_match\_networkx}        & distances agree with NetworkX BFS on all pairs \\
+\texttt{test\_unreachable\_returns\_none}     & edgeless graph $\Rightarrow$ all pairs \texttt{None} \\
+\texttt{test\_known\_path\_length}            & chain $0\to1\to2\to3$: dist$(0,3)=3$, dist$(3,0)=$\texttt{None} \\
+\texttt{test\_sequence\_length}              & encoded length $= 3E_{\max} + 3$ \\
+\texttt{test\_tokenization\_roundtrip}       & encode $\to$ decode recovers original edges and query \\
+\texttt{test\_node\_tokens\_are\_valid\_node\_ids} & node positions in triples are valid IDs \\
+\texttt{test\_no\_graph\_leaks}              & train and val graph ID sets are disjoint \\
+\texttt{test\_label\_values\_in\_range}      & labels $\in \{1,\ldots,n-1\} \cup \{\texttt{INF}\}$ \\
+\texttt{test\_inf\_ratio}                    & $10\% \leq$ INF fraction $\leq 60\%$ \\
+\texttt{test\_dataset\_tokens\_shape}        & token array shapes are consistent \\
+\texttt{test\_total\_sample\_count}          & total $= n_{\text{graphs}} \times n(n-1)$ \\
+\bottomrule
+\end{tabular}
+\caption{Data pipeline test suite (14 tests).}
+\end{table}
+
+\subsection{Model tests (\texttt{tests/test\_model.py})}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Test & What it checks \\
+\midrule
+\texttt{test\_output\_shape}              & logits shape $= (B, |\mathcal{V}|)$ \\
+\texttt{test\_output\_is\_finite}         & no NaN or Inf in fresh-model logits \\
+\texttt{test\_logits\_vary\_with\_input}  & different tokens $\Rightarrow$ different logits \\
+\texttt{test\_parameter\_count}          & $100\text{k} \leq \theta \leq 200\text{k}$ \\
+\texttt{test\_model\_accepts\_dataset\_tokens} & model input/output compatible with dataset \\
+\bottomrule
+\end{tabular}
+\caption{Model test suite (5 tests).}
+\end{table}
+
+% =============================================================================
+\section{Repository Structure}
+% =============================================================================
+
+\begin{lstlisting}[language=bash, keywordstyle={}]
+.
+|-- CLAUDE.md             project + collaboration instructions
+|-- pyproject.toml        dependencies + build config
+|-- refs/                 foundational papers (gitignored PDFs)
+|-- src/
+|   |-- data/
+|   |   |-- graphs.py     graph sampling + BFS ground truth
+|   |   |-- tokenizer.py  Vocab, encode, decode
+|   |   `-- dataset.py    generate_dataset, Dataset dataclass
+|   |-- model/
+|   |   `-- transformer.py  ModelConfig, MultiHeadAttention,
+|   |                       TransformerLayer, ShortestPathTransformer
+|   |-- train/            training loop (Phase 2, step 2.4 -- TODO)
+|   `-- interp/           interpretability toolkit (Phase 3 -- TODO)
+|-- scripts/              entry-point scripts (TODO)
+|-- notebooks/
+|   `-- documentation.tex  this file
+|-- tests/
+|   |-- test_data.py      14 data pipeline tests
+|   `-- test_model.py     5 model tests
+`-- checkpoints/          saved model states (gitignored)
+\end{lstlisting}
+
+% =============================================================================
+\section{Roadmap}
+% =============================================================================
+
+\begin{description}
+  \item[Phase 1 (Done)] Read both foundational papers; understand grokking and
+    the circuits framework.
+  \item[Phase 2 (Current)] Train a working model.
+    \begin{description}
+      \item[2.0 (Done)] Environment + repo skeleton.
+      \item[2.1 (Done)] Dataset generator with tests.
+      \item[2.2 (Done)] Tokenisation scheme, finalised and documented.
+      \item[2.3 (Done)] Transformer: 2-layer, attention-only, $\sim$140k params.
+      \item[2.4 (TODO)] Training loop: JAX/Optax, W\&B logging, checkpointing.
+      \item[2.5 (TODO)] Verify $>95\%$ val accuracy; plot the grokking curve.
+    \end{description}
+  \item[Phase 3 (TODO)] Interpretability toolkit: activation patching, attention
+    visualisation, logit lens, QK/OV circuit decomposition.
+  \item[Phase 4 (TODO)] Experiments + writeup: does the model learn BFS? Are
+    there forward/backward reachability circuits? How does the circuit form
+    during the grokking transition?
+\end{description}
+
+% =============================================================================
+\begin{thebibliography}{9}
+\bibitem{power2022grokking}
+  A.\ Power, Y.\ Burda, H.\ Edwards, I.\ Babuschkin, V.\ Misra.
+  \textit{Grokking: Generalization Beyond Overfitting on Small Algorithmic
+  Datasets.}
+  arXiv:2201.02177, 2022.
+
+\bibitem{elhage2021mathematical}
+  N.\ Elhage, N.\ Nanda, C.\ Olsson, T.\ Henighan, N.\ Joseph, B.\ Mann,
+  A.\ Askell, Y.\ Bai, A.\ Chen, T.\ Conerly, et al.
+  \textit{A Mathematical Framework for Transformer Circuits.}
+  Transformer Circuits Thread, 2021.
+  \url{https://transformer-circuits.pub/2021/framework/index.html}
+\end{thebibliography}
+
+\end{document}
