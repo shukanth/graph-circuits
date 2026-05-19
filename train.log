@@ -1,0 +1,233 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /Users/shuka/.netrc.
+wandb: Currently logged in as: shukanth2004 (shukanth2004-the-ohio-state-university) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run mwzyvl4o
+wandb: Tracking run with wandb version 0.27.0
+wandb: Run data is saved locally in /Users/shuka/Documents/vscode/mechanistic_interpretability/wandb/run-20260517_054239-mwzyvl4o
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run confused-valley-1
+wandb: ⭐️ View project at https://wandb.ai/shukanth2004-the-ohio-state-university/mechinterp
+wandb: 🚀 View run at https://wandb.ai/shukanth2004-the-ohio-state-university/mechinterp/runs/mwzyvl4o
+Generating dataset: n_nodes=6, n_graphs=1000, dataset_seed=42
+  train: 24,000 samples | val: 6,000 samples | vocab size: 10 | seq len: 48
+Training: lr=0.001, wd=1.0, n_steps=100,000, seed=0
+step    500 | train loss 1.2176 | train acc 0.484 | val loss 1.2938 | val acc 0.430 | ‖g‖ 1.2290 | 14s
+step   1000 | train loss 1.1518 | train acc 0.531 | val loss 1.2245 | val acc 0.471 | ‖g‖ 0.9559 | 27s
+step   1500 | train loss 1.2931 | train acc 0.422 | val loss 1.1817 | val acc 0.483 | ‖g‖ 1.1435 | 40s
+step   2000 | train loss 1.0872 | train acc 0.570 | val loss 1.1814 | val acc 0.486 | ‖g‖ 1.6014 | 54s
+step   2500 | train loss 1.1118 | train acc 0.609 | val loss 1.1605 | val acc 0.491 | ‖g‖ 1.5080 | 66s
+step   3000 | train loss 1.0815 | train acc 0.531 | val loss 1.1767 | val acc 0.482 | ‖g‖ 1.5814 | 80s
+step   3500 | train loss 1.1333 | train acc 0.438 | val loss 1.1527 | val acc 0.494 | ‖g‖ 2.1420 | 95s
+step   4000 | train loss 1.0161 | train acc 0.609 | val loss 1.1870 | val acc 0.494 | ‖g‖ 2.7244 | 110s
+step   4500 | train loss 0.9481 | train acc 0.570 | val loss 1.0017 | val acc 0.569 | ‖g‖ 2.3053 | 125s
+step   5000 | train loss 0.9708 | train acc 0.578 | val loss 1.0297 | val acc 0.561 | ‖g‖ 5.8208 | 140s
+step   5500 | train loss 0.8648 | train acc 0.602 | val loss 0.9826 | val acc 0.576 | ‖g‖ 3.7175 | 153s
+step   6000 | train loss 0.8766 | train acc 0.641 | val loss 0.9555 | val acc 0.588 | ‖g‖ 2.8238 | 168s
+step   6500 | train loss 0.9149 | train acc 0.602 | val loss 0.9486 | val acc 0.587 | ‖g‖ 6.0418 | 184s
+step   7000 | train loss 1.0718 | train acc 0.555 | val loss 0.9659 | val acc 0.574 | ‖g‖ 9.0570 | 198s
+step   7500 | train loss 0.9556 | train acc 0.555 | val loss 0.9455 | val acc 0.585 | ‖g‖ 6.7058 | 212s
+step   8000 | train loss 0.9637 | train acc 0.609 | val loss 0.9786 | val acc 0.565 | ‖g‖ 5.6090 | 226s
+step   8500 | train loss 0.9061 | train acc 0.562 | val loss 0.9650 | val acc 0.580 | ‖g‖ 3.7954 | 241s
+step   9000 | train loss 0.8907 | train acc 0.586 | val loss 0.9634 | val acc 0.574 | ‖g‖ 5.8112 | 257s
+step   9500 | train loss 0.8312 | train acc 0.648 | val loss 0.9400 | val acc 0.586 | ‖g‖ 6.3007 | 271s
+step  10000 | train loss 0.7967 | train acc 0.656 | val loss 0.9721 | val acc 0.565 | ‖g‖ 4.9135 | 286s
+step  10500 | train loss 0.9742 | train acc 0.547 | val loss 1.0187 | val acc 0.551 | ‖g‖ 11.0805 | 301s
+step  11000 | train loss 0.8984 | train acc 0.539 | val loss 0.9722 | val acc 0.566 | ‖g‖ 9.1468 | 316s
+step  11500 | train loss 0.9275 | train acc 0.586 | val loss 0.9491 | val acc 0.588 | ‖g‖ 5.9451 | 332s
+step  12000 | train loss 0.8870 | train acc 0.648 | val loss 0.9500 | val acc 0.580 | ‖g‖ 7.4073 | 347s
+step  12500 | train loss 0.8697 | train acc 0.594 | val loss 0.9627 | val acc 0.577 | ‖g‖ 5.2090 | 362s
+step  13000 | train loss 0.9056 | train acc 0.602 | val loss 0.9798 | val acc 0.573 | ‖g‖ 7.0472 | 379s
+step  13500 | train loss 0.8058 | train acc 0.727 | val loss 0.9583 | val acc 0.576 | ‖g‖ 6.7007 | 394s
+step  14000 | train loss 0.8817 | train acc 0.617 | val loss 0.9818 | val acc 0.566 | ‖g‖ 6.9811 | 409s
+step  14500 | train loss 1.1158 | train acc 0.461 | val loss 0.9842 | val acc 0.577 | ‖g‖ 11.1937 | 424s
+step  15000 | train loss 0.7917 | train acc 0.609 | val loss 0.9248 | val acc 0.585 | ‖g‖ 6.4380 | 440s
+step  15500 | train loss 1.0076 | train acc 0.547 | val loss 0.9543 | val acc 0.590 | ‖g‖ 14.4994 | 455s
+step  16000 | train loss 0.9303 | train acc 0.602 | val loss 0.9581 | val acc 0.582 | ‖g‖ 11.4731 | 471s
+step  16500 | train loss 1.0676 | train acc 0.508 | val loss 0.9505 | val acc 0.587 | ‖g‖ 11.5909 | 489s
+step  17000 | train loss 0.9598 | train acc 0.555 | val loss 0.9661 | val acc 0.585 | ‖g‖ 12.0884 | 505s
+step  17500 | train loss 0.8144 | train acc 0.648 | val loss 0.9353 | val acc 0.592 | ‖g‖ 10.0562 | 522s
+step  18000 | train loss 0.9454 | train acc 0.609 | val loss 0.9678 | val acc 0.582 | ‖g‖ 7.4295 | 540s
+step  18500 | train loss 0.8264 | train acc 0.594 | val loss 0.9712 | val acc 0.572 | ‖g‖ 9.6426 | 557s
+step  19000 | train loss 0.8931 | train acc 0.562 | val loss 0.9806 | val acc 0.576 | ‖g‖ 7.2043 | 579s
+step  19500 | train loss 0.9383 | train acc 0.562 | val loss 0.9536 | val acc 0.587 | ‖g‖ 6.8956 | 607s
+step  20000 | train loss 0.9134 | train acc 0.609 | val loss 0.9890 | val acc 0.577 | ‖g‖ 9.1855 | 637s
+step  20500 | train loss 0.8912 | train acc 0.555 | val loss 0.9658 | val acc 0.590 | ‖g‖ 8.7416 | 678s
+step  21000 | train loss 0.8412 | train acc 0.625 | val loss 0.9636 | val acc 0.587 | ‖g‖ 8.2861 | 693s
+step  21500 | train loss 1.0577 | train acc 0.562 | val loss 0.9655 | val acc 0.579 | ‖g‖ 10.2156 | 706s
+step  22000 | train loss 0.8494 | train acc 0.664 | val loss 0.9409 | val acc 0.579 | ‖g‖ 6.3482 | 719s
+step  22500 | train loss 0.8665 | train acc 0.625 | val loss 0.9463 | val acc 0.590 | ‖g‖ 7.2575 | 1652s
+step  23000 | train loss 0.7909 | train acc 0.633 | val loss 0.9529 | val acc 0.584 | ‖g‖ 6.4997 | 1667s
+step  23500 | train loss 0.8009 | train acc 0.641 | val loss 0.9281 | val acc 0.595 | ‖g‖ 6.7602 | 1683s
+step  24000 | train loss 0.9074 | train acc 0.656 | val loss 0.9814 | val acc 0.574 | ‖g‖ 9.8013 | 1700s
+step  24500 | train loss 0.9069 | train acc 0.633 | val loss 0.9426 | val acc 0.583 | ‖g‖ 5.9027 | 1717s
+step  25000 | train loss 0.7675 | train acc 0.664 | val loss 0.9513 | val acc 0.575 | ‖g‖ 8.7029 | 1734s
+step  25500 | train loss 0.9355 | train acc 0.625 | val loss 0.9293 | val acc 0.595 | ‖g‖ 5.9033 | 1755s
+step  26000 | train loss 0.8946 | train acc 0.586 | val loss 0.9137 | val acc 0.595 | ‖g‖ 11.9147 | 1778s
+step  26500 | train loss 0.7860 | train acc 0.617 | val loss 0.8996 | val acc 0.598 | ‖g‖ 6.5782 | 1801s
+step  27000 | train loss 0.7749 | train acc 0.656 | val loss 0.9038 | val acc 0.601 | ‖g‖ 3.6897 | 1825s
+step  27500 | train loss 0.9183 | train acc 0.586 | val loss 0.9059 | val acc 0.594 | ‖g‖ 5.1364 | 1848s
+step  28000 | train loss 0.9022 | train acc 0.547 | val loss 0.8917 | val acc 0.599 | ‖g‖ 7.2214 | 1870s
+step  28500 | train loss 0.8571 | train acc 0.578 | val loss 0.9085 | val acc 0.601 | ‖g‖ 7.0217 | 1897s
+step  29000 | train loss 0.8573 | train acc 0.617 | val loss 0.9047 | val acc 0.593 | ‖g‖ 7.0945 | 1923s
+step  29500 | train loss 0.9481 | train acc 0.562 | val loss 0.9406 | val acc 0.577 | ‖g‖ 10.5062 | 1950s
+step  30000 | train loss 0.7338 | train acc 0.680 | val loss 0.8828 | val acc 0.603 | ‖g‖ 2.6878 | 1980s
+step  30500 | train loss 0.7840 | train acc 0.680 | val loss 0.8766 | val acc 0.607 | ‖g‖ 6.3640 | 2008s
+step  31000 | train loss 0.9050 | train acc 0.594 | val loss 0.8958 | val acc 0.594 | ‖g‖ 4.4370 | 2029s
+step  31500 | train loss 0.8891 | train acc 0.594 | val loss 0.8723 | val acc 0.612 | ‖g‖ 6.8841 | 2050s
+step  32000 | train loss 0.8515 | train acc 0.633 | val loss 0.8747 | val acc 0.608 | ‖g‖ 5.7288 | 2071s
+step  32500 | train loss 0.8882 | train acc 0.594 | val loss 0.8968 | val acc 0.600 | ‖g‖ 5.1337 | 2092s
+step  33000 | train loss 0.9495 | train acc 0.531 | val loss 0.8673 | val acc 0.610 | ‖g‖ 9.4204 | 2113s
+step  33500 | train loss 0.8686 | train acc 0.625 | val loss 0.8898 | val acc 0.605 | ‖g‖ 5.1831 | 2140s
+step  34000 | train loss 0.8449 | train acc 0.672 | val loss 0.8959 | val acc 0.610 | ‖g‖ 4.9240 | 2166s
+step  34500 | train loss 0.9147 | train acc 0.641 | val loss 0.8712 | val acc 0.617 | ‖g‖ 6.3168 | 2188s
+step  35000 | train loss 0.8328 | train acc 0.680 | val loss 0.8872 | val acc 0.607 | ‖g‖ 10.8695 | 2209s
+step  35500 | train loss 0.7666 | train acc 0.680 | val loss 0.8820 | val acc 0.607 | ‖g‖ 6.4068 | 2230s
+step  36000 | train loss 0.8598 | train acc 0.641 | val loss 0.8898 | val acc 0.601 | ‖g‖ 8.5400 | 2254s
+step  36500 | train loss 0.9236 | train acc 0.531 | val loss 0.8850 | val acc 0.611 | ‖g‖ 8.4033 | 2279s
+step  37000 | train loss 0.8253 | train acc 0.594 | val loss 0.8821 | val acc 0.606 | ‖g‖ 4.5014 | 2304s
+step  37500 | train loss 0.9147 | train acc 0.586 | val loss 0.8799 | val acc 0.611 | ‖g‖ 7.5054 | 2333s
+step  38000 | train loss 0.8224 | train acc 0.641 | val loss 0.8846 | val acc 0.610 | ‖g‖ 5.6526 | 2357s
+step  38500 | train loss 0.7924 | train acc 0.641 | val loss 0.8932 | val acc 0.611 | ‖g‖ 4.5377 | 2380s
+step  39000 | train loss 0.7980 | train acc 0.609 | val loss 0.8925 | val acc 0.607 | ‖g‖ 8.9983 | 2406s
+step  39500 | train loss 0.8977 | train acc 0.602 | val loss 0.8819 | val acc 0.610 | ‖g‖ 8.2501 | 2430s
+step  40000 | train loss 0.8318 | train acc 0.656 | val loss 0.9601 | val acc 0.589 | ‖g‖ 6.8316 | 2451s
+step  40500 | train loss 0.7549 | train acc 0.688 | val loss 0.9309 | val acc 0.587 | ‖g‖ 6.0253 | 2473s
+step  41000 | train loss 0.7765 | train acc 0.641 | val loss 0.8810 | val acc 0.607 | ‖g‖ 5.3437 | 2494s
+step  41500 | train loss 0.8439 | train acc 0.625 | val loss 0.8996 | val acc 0.599 | ‖g‖ 6.3484 | 2515s
+step  42000 | train loss 0.9585 | train acc 0.523 | val loss 0.8920 | val acc 0.602 | ‖g‖ 4.8382 | 2536s
+step  42500 | train loss 0.8677 | train acc 0.648 | val loss 0.9235 | val acc 0.593 | ‖g‖ 13.9946 | 2558s
+step  43000 | train loss 0.8113 | train acc 0.656 | val loss 0.9027 | val acc 0.603 | ‖g‖ 5.8873 | 2579s
+step  43500 | train loss 0.8581 | train acc 0.602 | val loss 0.8691 | val acc 0.616 | ‖g‖ 6.1560 | 2607s
+step  44000 | train loss 1.0096 | train acc 0.539 | val loss 0.8814 | val acc 0.611 | ‖g‖ 10.8157 | 2637s
+step  44500 | train loss 0.8535 | train acc 0.594 | val loss 0.8868 | val acc 0.604 | ‖g‖ 7.9989 | 2665s
+step  45000 | train loss 0.9242 | train acc 0.555 | val loss 0.8767 | val acc 0.614 | ‖g‖ 7.7782 | 2687s
+step  45500 | train loss 0.7733 | train acc 0.688 | val loss 0.8884 | val acc 0.608 | ‖g‖ 8.4258 | 2710s
+step  46000 | train loss 0.8463 | train acc 0.586 | val loss 0.9015 | val acc 0.601 | ‖g‖ 7.9954 | 2732s
+step  46500 | train loss 0.8217 | train acc 0.586 | val loss 0.8732 | val acc 0.610 | ‖g‖ 5.5454 | 2754s
+step  47000 | train loss 0.8906 | train acc 0.617 | val loss 0.8843 | val acc 0.607 | ‖g‖ 4.4198 | 2776s
+step  47500 | train loss 0.9017 | train acc 0.602 | val loss 0.8882 | val acc 0.611 | ‖g‖ 7.2632 | 2797s
+step  48000 | train loss 0.8475 | train acc 0.648 | val loss 0.9433 | val acc 0.588 | ‖g‖ 6.5105 | 2819s
+step  48500 | train loss 0.7725 | train acc 0.586 | val loss 0.8886 | val acc 0.610 | ‖g‖ 11.5834 | 2847s
+step  49000 | train loss 0.9590 | train acc 0.570 | val loss 0.8740 | val acc 0.604 | ‖g‖ 7.8004 | 2871s
+step  49500 | train loss 0.8963 | train acc 0.578 | val loss 0.8720 | val acc 0.612 | ‖g‖ 6.4460 | 2894s
+step  50000 | train loss 0.9012 | train acc 0.625 | val loss 0.9019 | val acc 0.596 | ‖g‖ 8.4223 | 2917s
+step  50500 | train loss 0.8305 | train acc 0.680 | val loss 0.8815 | val acc 0.609 | ‖g‖ 5.5610 | 2945s
+step  51000 | train loss 0.9320 | train acc 0.547 | val loss 0.8904 | val acc 0.610 | ‖g‖ 14.0138 | 2969s
+step  51500 | train loss 0.8000 | train acc 0.617 | val loss 0.8750 | val acc 0.610 | ‖g‖ 5.3655 | 2993s
+step  52000 | train loss 0.9402 | train acc 0.602 | val loss 0.9414 | val acc 0.590 | ‖g‖ 6.5785 | 3021s
+step  52500 | train loss 0.8043 | train acc 0.617 | val loss 0.8874 | val acc 0.608 | ‖g‖ 5.5847 | 3047s
+step  53000 | train loss 0.7975 | train acc 0.617 | val loss 0.8982 | val acc 0.603 | ‖g‖ 4.0407 | 3071s
+step  53500 | train loss 0.8390 | train acc 0.617 | val loss 0.9439 | val acc 0.576 | ‖g‖ 7.9681 | 3094s
+step  54000 | train loss 0.7864 | train acc 0.648 | val loss 0.8702 | val acc 0.615 | ‖g‖ 6.5382 | 3116s
+step  54500 | train loss 0.9473 | train acc 0.523 | val loss 0.8673 | val acc 0.621 | ‖g‖ 7.6273 | 3138s
+step  55000 | train loss 0.8362 | train acc 0.641 | val loss 0.8795 | val acc 0.614 | ‖g‖ 7.0349 | 3166s
+step  55500 | train loss 0.8154 | train acc 0.625 | val loss 0.9451 | val acc 0.587 | ‖g‖ 7.1601 | 3196s
+step  56000 | train loss 0.8649 | train acc 0.648 | val loss 0.9292 | val acc 0.590 | ‖g‖ 4.9936 | 3223s
+step  56500 | train loss 0.8471 | train acc 0.664 | val loss 0.9153 | val acc 0.600 | ‖g‖ 4.9374 | 3259s
+step  57000 | train loss 0.7451 | train acc 0.625 | val loss 0.8809 | val acc 0.602 | ‖g‖ 6.9535 | 3295s
+step  57500 | train loss 0.8841 | train acc 0.641 | val loss 0.8835 | val acc 0.603 | ‖g‖ 4.6714 | 3328s
+step  58000 | train loss 0.8460 | train acc 0.633 | val loss 0.9339 | val acc 0.582 | ‖g‖ 4.8604 | 3357s
+step  58500 | train loss 0.8337 | train acc 0.609 | val loss 0.9009 | val acc 0.610 | ‖g‖ 8.6909 | 3391s
+step  59000 | train loss 0.9687 | train acc 0.539 | val loss 0.8902 | val acc 0.603 | ‖g‖ 8.2078 | 3416s
+step  59500 | train loss 0.9000 | train acc 0.578 | val loss 0.8989 | val acc 0.600 | ‖g‖ 7.1693 | 3446s
+step  60000 | train loss 0.8323 | train acc 0.586 | val loss 0.9183 | val acc 0.597 | ‖g‖ 9.3746 | 3478s
+step  60500 | train loss 0.8419 | train acc 0.633 | val loss 0.8980 | val acc 0.606 | ‖g‖ 4.3535 | 3510s
+step  61000 | train loss 0.7942 | train acc 0.625 | val loss 0.8812 | val acc 0.611 | ‖g‖ 7.6247 | 3543s
+step  61500 | train loss 0.7972 | train acc 0.648 | val loss 0.8989 | val acc 0.600 | ‖g‖ 7.6867 | 3582s
+step  62000 | train loss 0.8609 | train acc 0.586 | val loss 0.8773 | val acc 0.610 | ‖g‖ 13.7282 | 3612s
+step  62500 | train loss 0.7399 | train acc 0.664 | val loss 0.9083 | val acc 0.592 | ‖g‖ 7.0218 | 3638s
+step  63000 | train loss 0.7354 | train acc 0.695 | val loss 0.8890 | val acc 0.607 | ‖g‖ 8.3602 | 3665s
+step  63500 | train loss 0.9095 | train acc 0.562 | val loss 0.8867 | val acc 0.613 | ‖g‖ 6.3485 | 3689s
+step  64000 | train loss 0.9263 | train acc 0.539 | val loss 0.8983 | val acc 0.606 | ‖g‖ 5.5049 | 3722s
+step  64500 | train loss 0.8577 | train acc 0.633 | val loss 0.8823 | val acc 0.610 | ‖g‖ 5.6512 | 3748s
+step  65000 | train loss 0.8303 | train acc 0.602 | val loss 0.9025 | val acc 0.596 | ‖g‖ 7.5200 | 3772s
+step  65500 | train loss 0.7594 | train acc 0.609 | val loss 0.9355 | val acc 0.591 | ‖g‖ 9.0724 | 3794s
+step  66000 | train loss 0.7910 | train acc 0.680 | val loss 0.9539 | val acc 0.575 | ‖g‖ 5.8356 | 3816s
+step  66500 | train loss 0.7810 | train acc 0.680 | val loss 0.8728 | val acc 0.614 | ‖g‖ 5.3961 | 3839s
+step  67000 | train loss 0.8449 | train acc 0.609 | val loss 0.9353 | val acc 0.588 | ‖g‖ 10.7642 | 3862s
+step  67500 | train loss 0.8841 | train acc 0.633 | val loss 0.8962 | val acc 0.602 | ‖g‖ 5.8683 | 3895s
+step  68000 | train loss 0.8150 | train acc 0.617 | val loss 0.9005 | val acc 0.602 | ‖g‖ 5.4949 | 3927s
+step  68500 | train loss 0.9005 | train acc 0.523 | val loss 0.8952 | val acc 0.605 | ‖g‖ 9.0103 | 3954s
+step  69000 | train loss 0.9366 | train acc 0.648 | val loss 0.9174 | val acc 0.583 | ‖g‖ 6.1426 | 3978s
+step  69500 | train loss 0.8344 | train acc 0.641 | val loss 0.9181 | val acc 0.591 | ‖g‖ 6.7262 | 4002s
+step  70000 | train loss 0.7201 | train acc 0.703 | val loss 0.8702 | val acc 0.610 | ‖g‖ 5.8023 | 4027s
+step  70500 | train loss 0.7707 | train acc 0.648 | val loss 0.9135 | val acc 0.589 | ‖g‖ 5.1166 | 4048s
+step  71000 | train loss 0.7921 | train acc 0.648 | val loss 0.8874 | val acc 0.612 | ‖g‖ 5.0130 | 4068s
+step  71500 | train loss 0.8065 | train acc 0.609 | val loss 0.9145 | val acc 0.598 | ‖g‖ 7.8034 | 4087s
+step  72000 | train loss 0.9547 | train acc 0.578 | val loss 0.9087 | val acc 0.593 | ‖g‖ 7.0348 | 4106s
+step  72500 | train loss 0.7868 | train acc 0.688 | val loss 0.8811 | val acc 0.607 | ‖g‖ 6.2801 | 4125s
+step  73000 | train loss 0.8590 | train acc 0.602 | val loss 0.9000 | val acc 0.604 | ‖g‖ 9.6549 | 4144s
+step  73500 | train loss 0.8488 | train acc 0.609 | val loss 0.8750 | val acc 0.612 | ‖g‖ 6.1399 | 4162s
+step  74000 | train loss 0.9008 | train acc 0.570 | val loss 0.8706 | val acc 0.619 | ‖g‖ 9.1213 | 4182s
+step  74500 | train loss 0.7492 | train acc 0.672 | val loss 0.9121 | val acc 0.599 | ‖g‖ 7.2639 | 4202s
+step  75000 | train loss 0.9519 | train acc 0.594 | val loss 0.8954 | val acc 0.607 | ‖g‖ 5.3025 | 4221swandb: updating run metadata
+wandb: uploading wandb-summary.json; uploading config.yaml; uploading output.log
+wandb: 
+wandb: Run history:
+wandb:       train/acc ▃▄▃▁▅▄▅█▅▄▅▅▆▅▅▆▅▆▇▆▅▅▅▄▆▆▅▆▄▃▇▆▅▅▅▄▇▅▆▅
+wandb: train/grad_norm ▁▄▄▃▄▅▅▅▄▄▃▅▅▄▄▅▄▃▆▅▃▃▅▃▅▅▄▄▆▄▅▅█▄▆▅▆▇▆▆
+wandb:      train/loss █▅▃▂▂▆▃▃▃▄▂▄▁▃▃▃▃▄▂▂▃▃▃▅▃▃▃▂▃▄▃▄▄▃▂▃▃▁▄▃
+wandb:         val/acc ▁▃▃▆▇▆▆▇▇▆▇▇▆▇▇████████▇██▇▇███▇▇█▇▇▇▆▇▇
+wandb:        val/loss █▄▃▃▄▃▄▂▃▃▃▃▂▁▁▁▂▁▂▁▂▃▂▁▂▁▁▃▃▂▂▁▂▂▁▃▃▃▃▃
+wandb: 
+wandb: Run summary:
+wandb:       train/acc 0.6875
+wandb: train/grad_norm 12.97887
+wandb:      train/loss 0.91372
+wandb:         val/acc 0.59733
+wandb:        val/loss 0.93697
+wandb: 
+wandb: 🚀 View run confused-valley-1 at: https://wandb.ai/shukanth2004-the-ohio-state-university/mechinterp/runs/mwzyvl4o
+wandb: ⭐️ View project at: https://wandb.ai/shukanth2004-the-ohio-state-university/mechinterp
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260517_054239-mwzyvl4o/logs
+
+step  75500 | train loss 0.8665 | train acc 0.617 | val loss 0.8705 | val acc 0.616 | ‖g‖ 7.6207 | 4241s
+step  76000 | train loss 0.8352 | train acc 0.602 | val loss 0.8831 | val acc 0.603 | ‖g‖ 4.5996 | 4260s
+step  76500 | train loss 0.9165 | train acc 0.609 | val loss 0.9113 | val acc 0.604 | ‖g‖ 8.4912 | 4279s
+step  77000 | train loss 0.9157 | train acc 0.648 | val loss 0.9127 | val acc 0.595 | ‖g‖ 6.8034 | 4303s
+step  77500 | train loss 0.8965 | train acc 0.562 | val loss 0.8793 | val acc 0.609 | ‖g‖ 7.3200 | 4333s
+step  78000 | train loss 0.9185 | train acc 0.617 | val loss 0.8849 | val acc 0.604 | ‖g‖ 7.0983 | 4369s
+step  78500 | train loss 0.8242 | train acc 0.602 | val loss 0.8914 | val acc 0.605 | ‖g‖ 5.3999 | 4399s
+step  79000 | train loss 0.8591 | train acc 0.562 | val loss 0.8824 | val acc 0.612 | ‖g‖ 6.7223 | 4428s
+step  79500 | train loss 0.9437 | train acc 0.547 | val loss 0.8884 | val acc 0.604 | ‖g‖ 9.0008 | 4456s
+step  80000 | train loss 0.9293 | train acc 0.594 | val loss 0.8864 | val acc 0.608 | ‖g‖ 6.8825 | 4496s
+step  80500 | train loss 0.9623 | train acc 0.562 | val loss 0.8616 | val acc 0.617 | ‖g‖ 8.4654 | 4531s
+step  81000 | train loss 0.8677 | train acc 0.570 | val loss 0.8856 | val acc 0.597 | ‖g‖ 5.9892 | 4571s
+step  81500 | train loss 0.8959 | train acc 0.570 | val loss 0.8892 | val acc 0.609 | ‖g‖ 8.0576 | 4598s
+step  82000 | train loss 0.7947 | train acc 0.633 | val loss 0.8812 | val acc 0.607 | ‖g‖ 5.3601 | 4622s
+step  82500 | train loss 0.8397 | train acc 0.633 | val loss 0.9101 | val acc 0.595 | ‖g‖ 5.8964 | 4645s
+step  83000 | train loss 0.8532 | train acc 0.641 | val loss 0.9105 | val acc 0.595 | ‖g‖ 8.4421 | 4669s
+step  83500 | train loss 0.8253 | train acc 0.672 | val loss 0.8864 | val acc 0.595 | ‖g‖ 5.3315 | 4692s
+step  84000 | train loss 0.7516 | train acc 0.672 | val loss 0.9166 | val acc 0.595 | ‖g‖ 7.1642 | 4725s
+step  84500 | train loss 0.8978 | train acc 0.562 | val loss 0.8884 | val acc 0.608 | ‖g‖ 7.5613 | 4757s
+step  85000 | train loss 0.7723 | train acc 0.664 | val loss 0.8865 | val acc 0.609 | ‖g‖ 4.3882 | 4791s
+step  85500 | train loss 0.8189 | train acc 0.609 | val loss 0.8798 | val acc 0.612 | ‖g‖ 11.3282 | 4816s
+step  86000 | train loss 0.9451 | train acc 0.609 | val loss 0.9660 | val acc 0.579 | ‖g‖ 12.3248 | 4839s
+step  86500 | train loss 0.8673 | train acc 0.641 | val loss 0.9246 | val acc 0.601 | ‖g‖ 9.4187 | 4869s
+step  87000 | train loss 0.8874 | train acc 0.617 | val loss 0.9201 | val acc 0.599 | ‖g‖ 14.4164 | 4893s
+step  87500 | train loss 0.8966 | train acc 0.609 | val loss 0.9232 | val acc 0.599 | ‖g‖ 15.8775 | 4919s
+step  88000 | train loss 0.9012 | train acc 0.586 | val loss 0.9487 | val acc 0.585 | ‖g‖ 5.1997 | 4943s
+step  88500 | train loss 0.7688 | train acc 0.633 | val loss 0.9348 | val acc 0.591 | ‖g‖ 9.9744 | 4970s
+step  89000 | train loss 0.8638 | train acc 0.594 | val loss 0.9665 | val acc 0.576 | ‖g‖ 6.9652 | 5005s
+step  89500 | train loss 0.9423 | train acc 0.664 | val loss 0.9462 | val acc 0.588 | ‖g‖ 9.1683 | 5040s
+step  90000 | train loss 0.9580 | train acc 0.594 | val loss 0.9510 | val acc 0.596 | ‖g‖ 11.6223 | 5067s
+step  90500 | train loss 0.9369 | train acc 0.586 | val loss 0.9528 | val acc 0.593 | ‖g‖ 8.8293 | 5091s
+step  91000 | train loss 0.8810 | train acc 0.625 | val loss 0.9474 | val acc 0.585 | ‖g‖ 16.1824 | 5115s
+step  91500 | train loss 0.9072 | train acc 0.602 | val loss 0.9421 | val acc 0.579 | ‖g‖ 12.9524 | 5138s
+step  92000 | train loss 0.9134 | train acc 0.602 | val loss 0.9523 | val acc 0.584 | ‖g‖ 7.5729 | 5168s
+step  92500 | train loss 0.8530 | train acc 0.641 | val loss 0.9410 | val acc 0.603 | ‖g‖ 13.8002 | 5198s
+step  93000 | train loss 0.7768 | train acc 0.641 | val loss 0.9364 | val acc 0.601 | ‖g‖ 8.8990 | 5233s
+step  93500 | train loss 0.8454 | train acc 0.633 | val loss 0.9440 | val acc 0.591 | ‖g‖ 9.5888 | 5269s
+step  94000 | train loss 0.8781 | train acc 0.555 | val loss 0.9675 | val acc 0.575 | ‖g‖ 12.2502 | 5299s
+step  94500 | train loss 0.8765 | train acc 0.656 | val loss 0.9391 | val acc 0.596 | ‖g‖ 10.4087 | 5326s
+step  95000 | train loss 0.9338 | train acc 0.570 | val loss 0.9375 | val acc 0.593 | ‖g‖ 11.1777 | 5351s
+step  95500 | train loss 0.9234 | train acc 0.555 | val loss 0.9349 | val acc 0.595 | ‖g‖ 8.5454 | 5377s
+step  96000 | train loss 0.9516 | train acc 0.570 | val loss 0.9822 | val acc 0.588 | ‖g‖ 10.1604 | 5402s
+step  96500 | train loss 0.9670 | train acc 0.609 | val loss 1.0076 | val acc 0.574 | ‖g‖ 13.3583 | 5428s
+step  97000 | train loss 0.8065 | train acc 0.688 | val loss 0.9769 | val acc 0.575 | ‖g‖ 5.3843 | 5458s
+step  97500 | train loss 0.9752 | train acc 0.516 | val loss 0.9387 | val acc 0.583 | ‖g‖ 6.2944 | 5489s
+step  98000 | train loss 0.8638 | train acc 0.609 | val loss 0.9790 | val acc 0.590 | ‖g‖ 6.1813 | 5517s
+step  98500 | train loss 0.9167 | train acc 0.648 | val loss 0.9398 | val acc 0.596 | ‖g‖ 10.3257 | 5543s
+step  99000 | train loss 0.7481 | train acc 0.688 | val loss 0.9675 | val acc 0.578 | ‖g‖ 12.5981 | 5568s
+step  99500 | train loss 0.8191 | train acc 0.703 | val loss 0.9428 | val acc 0.602 | ‖g‖ 9.4394 | 5592s
+step 100000 | train loss 0.9137 | train acc 0.688 | val loss 0.9370 | val acc 0.597 | ‖g‖ 12.9789 | 5617s

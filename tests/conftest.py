@@ -1,6 +1,5 @@
 import os
 
-# jax-metal (Apple Silicon) does not support int64 array creation, which JAX
-# uses internally when seeding RNG keys. Tests don't need GPU acceleration,
-# so force CPU here. The training script will handle Metal separately.
-os.environ.setdefault("JAX_PLATFORMS", "cpu")
+# Hard assignment, not setdefault: jax-metal may register as default backend
+# even without an explicit env var, which setdefault would not override.
+os.environ["JAX_PLATFORMS"] = "cpu"

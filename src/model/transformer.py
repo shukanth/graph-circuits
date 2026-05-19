@@ -1,12 +1,39 @@
+"""
+Shortest-path transformer defined with Flax Linen.
+
+Linen (flax.linen) is the functional-JAX API: the forward pass is a pure
+function `model.apply(params, tokens)` where params is an explicit dict
+argument rather than state living inside the module. This fits @jax.jit
+naturally — pass params in, get outputs out, no mutation.
+
+The nnx API (flax.nnx) is the stateful API designed to feel like PyTorch.
+It wraps params inside module objects and uses @nnx.jit to extract/re-inject
+them. In Flax 0.11.0, nnx.merge inside @jax.jit triggers an XLA shape
+inference abort (`(0 <= -55) is statically false`). Linen has no such issue.
+
+Architecture choices:
+- Attention-only (no MLP): right complexity level for full circuit analysis.
+- No causal mask: bidirectional attention because this is classification, not
+  generation — every edge token needs to influence the output position.
+- No bias on Q/K/V/O: bias-free keeps circuit equations clean for Phase 3
+  interpretability work.
+- Pre-norm: LayerNorm before attention, not after. More training-stable.
+- Read output from the last token position (the dst node token).
+"""
+
 from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
-from flax import nnx
+import flax.linen as nn
 
 
-@dataclass
+@dataclass(frozen=True)
 class ModelConfig:
+    """
+    frozen=True makes ModelConfig hashable, which is required when passing it
+    as an attribute of a Flax Linen module (Linen modules need hashable fields).
+    """
     vocab_size: int
     seq_len: int
     d_model: int = 128
@@ -14,83 +41,69 @@ class ModelConfig:
     n_layers: int = 2
 
 
-class MultiHeadAttention(nnx.Module):
-    """
-    Multi-head self-attention with no causal mask.
+class MultiHeadAttention(nn.Module):
+    d_model: int
+    n_heads: int
 
-    Full bidirectional attention because this is a classification task — every
-    edge token needs to be able to influence the output position.
-
-    No biases on Q/K/V/O projections — bias-free QKV is standard in
-    mechanistic interpretability work because it keeps the circuit equations
-    clean (no additive offset terms to track).
-    """
-
-    def __init__(self, d_model: int, n_heads: int, rngs: nnx.Rngs):
-        assert d_model % n_heads == 0, f"d_model={d_model} must be divisible by n_heads={n_heads}"
-        self.n_heads = n_heads
-        self.d_head = d_model // n_heads
-
-        self.W_Q = nnx.Linear(d_model, d_model, use_bias=False, rngs=rngs)
-        self.W_K = nnx.Linear(d_model, d_model, use_bias=False, rngs=rngs)
-        self.W_V = nnx.Linear(d_model, d_model, use_bias=False, rngs=rngs)
-        self.W_O = nnx.Linear(d_model, d_model, use_bias=False, rngs=rngs)
+    def setup(self):
+        assert self.d_model % self.n_heads == 0, (
+            f"d_model={self.d_model} must be divisible by n_heads={self.n_heads}"
+        )
+        self.W_Q = nn.Dense(self.d_model, use_bias=False)
+        self.W_K = nn.Dense(self.d_model, use_bias=False)
+        self.W_V = nn.Dense(self.d_model, use_bias=False)
+        self.W_O = nn.Dense(self.d_model, use_bias=False)
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         batch, seq, _ = x.shape
+        d_head = self.d_model // self.n_heads
 
-        def split_heads(z: jnp.ndarray) -> jnp.ndarray:
-            # (batch, seq, d_model) → (batch, n_heads, seq, d_head)
-            return z.reshape(batch, seq, self.n_heads, self.d_head).transpose(0, 2, 1, 3)
+        # Reshape only — no transpose at all. Q/K/V stay in (batch, seq, heads, d_head)
+        # order ("bqhd") throughout. All transposes are eliminated to work around a
+        # JAX 0.10.0 XLA bug where transpose→reshape (in either direction) during the
+        # backward pass produces a negative slice start index at batch >= 512 on CPU,
+        # aborting the process with "(0 <= -N) is statically false".
+        Q = self.W_Q(x).reshape(batch, seq, self.n_heads, d_head)  # "bqhd"
+        K = self.W_K(x).reshape(batch, seq, self.n_heads, d_head)  # "bkhd"
+        V = self.W_V(x).reshape(batch, seq, self.n_heads, d_head)  # "bkhd"
 
-        Q = split_heads(self.W_Q(x))
-        K = split_heads(self.W_K(x))
-        V = split_heads(self.W_V(x))
-
-        scale = self.d_head ** -0.5
-        scores = jnp.einsum("bhqd,bhkd->bhqk", Q, K) * scale  # (batch, heads, seq, seq)
+        scale = d_head ** -0.5
+        # Q "bqhd", K "bkhd" → scores "bhqk": contracts over d only.
+        scores = jnp.einsum("bqhd,bkhd->bhqk", Q, K) * scale
         attn = jax.nn.softmax(scores, axis=-1)
 
-        z = jnp.einsum("bhqk,bhkd->bhqd", attn, V)            # (batch, heads, seq, d_head)
-        z = z.transpose(0, 2, 1, 3).reshape(batch, seq, -1)   # (batch, seq, d_model)
+        # attn "bhqk", V "bkhd" → z "bqhd": contracts over k only.
+        z = jnp.einsum("bhqk,bkhd->bqhd", attn, V)
+        z = z.reshape(batch, seq, self.d_model)
         return self.W_O(z)
 
 
-class TransformerLayer(nnx.Module):
-    """
-    Pre-norm transformer layer: LayerNorm → attention → residual add. No MLP.
+class TransformerLayer(nn.Module):
+    d_model: int
+    n_heads: int
 
-    Attention-only keeps this at the right complexity level for full circuit
-    analysis (QK/OV decomposition, composition between layers).
-
-    Pre-norm (normalize before attention, not after) is more stable during
-    training than post-norm and is the modern standard.
-    """
-
-    def __init__(self, d_model: int, n_heads: int, rngs: nnx.Rngs):
-        self.attn = MultiHeadAttention(d_model, n_heads, rngs)
-        self.ln = nnx.LayerNorm(d_model, rngs=rngs)
+    def setup(self):
+        self.attn = MultiHeadAttention(d_model=self.d_model, n_heads=self.n_heads)
+        self.ln = nn.LayerNorm()
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         return x + self.attn(self.ln(x))
 
 
-class ShortestPathTransformer(nnx.Module):
-    """
-    2-layer attention-only transformer for shortest-path length classification.
+class ShortestPathTransformer(nn.Module):
+    cfg: ModelConfig
 
-    Reads the full token sequence and predicts the answer from the final token
-    position (the dst node token). The dst position can attend to all edge
-    tokens across both layers to accumulate path-length information.
-    """
-
-    def __init__(self, cfg: ModelConfig, rngs: nnx.Rngs):
-        self.cfg = cfg
-        self.W_E = nnx.Embed(cfg.vocab_size, cfg.d_model, rngs=rngs)
-        self.W_pos = nnx.Embed(cfg.seq_len, cfg.d_model, rngs=rngs)
-        self.layers = nnx.List([TransformerLayer(cfg.d_model, cfg.n_heads, rngs) for _ in range(cfg.n_layers)])
-        self.ln_final = nnx.LayerNorm(cfg.d_model, rngs=rngs)
-        self.W_U = nnx.Linear(cfg.d_model, cfg.vocab_size, use_bias=False, rngs=rngs)
+    def setup(self):
+        self.W_E = nn.Embed(self.cfg.vocab_size, self.cfg.d_model)
+        self.W_pos = nn.Embed(self.cfg.seq_len, self.cfg.d_model)
+        # List of submodules — Linen names them layers_0, layers_1, ... in the
+        # params dict, which is exactly the structure we want for Phase 3 analysis.
+        self.layers = [
+            TransformerLayer(d_model=self.cfg.d_model, n_heads=self.cfg.n_heads)
+            for _ in range(self.cfg.n_layers)
+        ]
+        self.ln_final = nn.LayerNorm()
+        self.W_U = nn.Dense(self.cfg.vocab_size, use_bias=False)
 
     def __call__(self, tokens: jnp.ndarray) -> jnp.ndarray:
         """
@@ -106,4 +119,4 @@ class ShortestPathTransformer(nnx.Module):
             x = layer(x)
 
         x = self.ln_final(x)
-        return self.W_U(x[:, -1, :])  # read from the dst token position
+        return self.W_U(x[:, seq - 1, :])  # read from the dst token position
