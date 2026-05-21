@@ -1426,6 +1426,138 @@ setup for Phase~3. It is a persistent reference during interpretability work ---
 a place to look up access paths, slicing rules, and anchor checkpoints without
 re-deriving them each session.
 
+% ---------------------------------------------------------------------------
+\subsection{Summary of findings}
+\label{sec:findings-summary}
+% ---------------------------------------------------------------------------
+
+\textbf{The central result:} Run~5 (n4-wd0.4-200k-seed0) exhibits a
+\emph{two-stage grokking trajectory} in which the model first learns a cheap
+structural shortcut and then replaces it with a content-sensitive circuit.
+The two accuracy jumps visible in the loss curve are not two instances of the
+same phenomenon --- they are mechanistically distinct events: shortcut
+construction, then shortcut replacement.
+
+\subsubsection*{What happened, in plain language}
+
+\textbf{Before Stage~1 ($\le$114k steps): memorization.}
+The model overfits the training set. Validation accuracy is near chance.
+No head shows a structured OV circuit or directed attention pattern.
+
+\textbf{Stage~1 (114k--126k steps): PAD-bias shortcut built.}
+Layer~1 heads (L1H0 and L1H1) co-adapt so that their product matrices
+$W_V W_O$ align with the token-embedding space in a way that injects a
+structured logit bias whenever attention falls on PAD-token positions.
+Because sequences for 4-node graphs contain $\sim$21\% PAD positions,
+and because L1H0 develops near-uniform attention (attending everywhere
+including PAD), this bias is \emph{always active}: the model has learned to
+add a constant logit offset to every prediction.
+
+The bias is not arbitrary. Projecting $W_E[\textsc{pad}]$ through the full
+OV circuit at step~126k reveals that L1H0 pushes valid-answer logits toward
+longer distances and \textsc{inf}, while impossible-answer tokens (0,
+\textsc{edge}, \textsc{qry}, \textsc{pad}) are grouped at a common
+maximum. L1H1 is the mild counterpart (pushing toward shorter distances).
+The net combined bias is a ``prefer unreachability and long distances''
+prior --- statistically useful on a sparse directed graph, but not a genuine
+computation of the answer.
+
+Stage~1 is \emph{invisible in individual weight norms}. No single matrix
+suddenly grows large. What changes is a matrix-alignment event: the product
+$W_V W_O$ crosses a threshold of alignment with the embedding geometry.
+Individual norms cannot detect cross-matrix coordination; the OV circuit
+(the composed product) is the correct unit of analysis.
+
+\textbf{Stage~2 (188k--196k steps): shortcut partially dismantled; L0H1 grows.}
+Layer~0 head~1 (L0H1) exhibits the largest OV circuit norm change at
+Stage~2 ($+97\%$ from step~126k to step~196k). Simultaneously, L1H0's
+PAD-bias OV circuit weakens and the direction of L1H1's PAD projection
+reverses sign. The PAD-bias shortcut is substantially reduced but not
+completely eliminated.
+
+Causal validation by ablation: zeroing PAD-position attention weights in
+Layer~1 produces the predicted arc across four checkpoints --- largest
+accuracy drop at step~126k ($-2.9\%$), smallest at step~100k ($-0.6\%$),
+with Stage~2's 196k checkpoint intermediate ($-1.3\%$). The shortcut is
+load-bearing at Stage~1 and substantially but not completely retired at
+Stage~2.
+
+\textbf{What the model computes: a partial two-step backward BFS.}
+L0H1 implements token-identity matching in its QK circuit (diagonal-dominant
+$4 \times 4$ node-token subblock, $+0.014$ to $+0.018$): at the prediction
+position (query = \texttt{dst}), it attends to all sequence positions
+containing the same node token, i.e., the edge triplets in which \texttt{dst}
+appears.  This is \emph{Step~1 of a backward BFS from dst}: collect the set of
+edges adjacent to the destination.
+
+The logit lens (Section~\ref{sec:logit-lens}) confirms and extends this
+picture.  After Layer~0 alone, the model achieves 77.9\% on distance-1 and
+only 17.4\% on distance-2 at step~196k.  Layer~1 provides the \emph{decisive}
+second step: $+69.6$ percentage points on distance-2 (src $\to x \to$ dst,
+checking whether src connects to a predecessor of dst), $+37.6$ pp on INF
+(confirming no path exists), and $+21.5$ pp on distance-1 (refining the
+direct adjacency answer).
+
+\textbf{The distance-3 anomaly:} Layer~1 \emph{hurts} accuracy on
+distance-3 paths by $-23.8$ pp (Layer~0 alone: 47.6\%; full model: 23.8\%).
+The 2-layer architecture cannot perform a third BFS step: Layer~1 checks
+whether src can reach a direct predecessor of dst, but cannot verify indirect
+reachability (src $\to x \to y \to$ dst where $y$ is the predecessor).
+Layer~1's computation therefore misclassifies distance-3 paths as INF or a
+shorter distance.  This is an architectural limitation, not a training failure.
+
+\textbf{L0H1's OV circuit (Section~\ref{sec:l0h1-ov})} writes a
+node-conditioned distance prior at the token-type level: dst = node~2 or
+node~3 nudges toward dist=1; dst = node~0 nudges toward dist=3.  The
+positional component of its value vectors (not fully characterized) likely
+delivers the richer structural signal responsible for the 78\% dist=1
+accuracy at Layer~0.  The impossible-answer tokens (0, EDGE, QRY, PAD) are
+grouped at identical values in every node-token row, confirming the head
+contributes only to the valid-answer subspace of $W_U$.  See the complete
+algorithmic narrative in Section~\ref{sec:algorithm-narrative} for the full
+integrated picture.
+
+\subsubsection*{Numbered findings}
+
+The 31 numbered findings from Phase~3 are distributed across
+Sections~\ref{sec:probe-comparison}--\ref{sec:l0h1-ov}.
+For quick reference:
+
+\begin{description}[style=nextline, leftmargin=2.5cm, labelwidth=2cm]
+  \item[F1--F4]   Head roles from attention probes and KL/cosine comparison:
+                  L0H1 is the strongest directionality/content head; L1H0 is
+                  position-invariant and PAD-attending.
+  \item[F5--F7]   OV circuit analysis: L1H0 and L1H1 encode a PAD-token bias;
+                  L0H1's OV norm nearly doubles at Stage~2.
+  \item[F8--F11]  Stage~1 analysis: shortcut construction is a matrix-alignment
+                  event; individual weight norms are blind to it; L0H0 loses
+                  and L1H1 transiently gains directionality.
+  \item[F12--F14] Causal validation: ablation arc confirms the shortcut is
+                  load-bearing at 126k and substantially retired by 196k;
+                  renormalization consistently hurts more than magnitude-only
+                  removal.
+  \item[F15--F18] PAD value vector: impossible-answer tokens cluster at a
+                  common maximum; net bias is a ``prefer \textsc{inf}/longer
+                  distances'' prior; Stage~2 changes the direction, not just
+                  the magnitude.
+  \item[F19--F22] QK circuit analysis: L0H1 implements token-identity matching
+                  at 196k (diagonal-dominant node-token subblock); this routing
+                  selects edges involving the destination node; L0H0 has no
+                  structured QK routing; L1H0/L1H1 show PAD self-attraction
+                  consistent with their shortcut role.
+  \item[F23--F28] Logit lens: Layer~0 alone handles $\sim$78\% of dist=1 at
+                  196k; Layer~1's primary contribution is dist=2 (+69.6 pp);
+                  Layer~1 hurts dist=3 ($-23.8$ pp) revealing the
+                  architectural limit of 2-layer backward BFS; embedding-only
+                  prior encodes statistical distance signal by 196k; PAD-bias
+                  shortcut quantified at 126k (INF: +57.5 pp from Layer~1).
+  \item[F29--F31] L0H1 OV circuit: node-conditioned distance prior (nodes~2/3
+                  push toward dist=1; node~0 toward dist=3); impossible-answer
+                  tokens grouped at identical values in every row; value
+                  component partially structured before Stage~2 while routing
+                  (QK) crystallized later.
+\end{description}
+
 \subsection{Model architecture reference}
 \label{sec:model-ref}
 
@@ -1967,6 +2099,687 @@ state.  The grokking accuracy jump corresponds to the model abandoning a
 shortcut (constant PAD-based offset) and generalizing via a proper
 content-sensitive circuit concentrated in L0H1.
 
+\subsubsection{Stage 1 OV circuit and probe comparison analysis}
+\label{sec:stage1-analysis}
+
+The same analyses were run on the Stage~1 window (steps 100k, 116k, 126k) to
+determine whether Stage~1 is also an OV-circuit event, and why it was invisible
+in the individual weight-norm trajectories.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Head & $\|OV_{100k}\|_F$ & $\|OV_{116k}\|_F$ & $\|OV_{126k}\|_F$
+     & $\|\Delta OV\|_F$ & rel.\ change \\
+\midrule
+L0H0 & 0.085 & \textbf{0.221} & 0.183 & 0.175 & 2.04$\times$ \\
+L0H1 & 0.216 & 0.159 & 0.112 & 0.177 & 0.82$\times$ (shrank) \\
+L1H0 & 0.295 & 0.524 & \textbf{0.576} & 0.609 & \textbf{2.06$\times$} \\
+L1H1 & 0.364 & 0.618 & 0.531 & 0.418 & 1.15$\times$ \\
+\bottomrule
+\end{tabular}
+\caption{OV circuit Frobenius norms across Stage~1.  L1H0 and L1H1 both grow
+  substantially, the opposite direction from Stage~2.  L0H0 spikes at the
+  transition onset (116k) then retreats.  L0H1 shrinks throughout.}
+\label{tab:ov-norms-stage1}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{ov_circuits_stage1.png}
+\caption{OV circuit matrices at steps 100k, 116k, 126k, and the 126k$-$100k
+  difference.  The PAD row in L1H0 grows from a single bright cell (100k) into
+  a full saturated band (116k), confirming the PAD-bias shortcut is built during
+  Stage~1.  L1H1's negative PAD row forms simultaneously.}
+\label{fig:ov-stage1}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+ & \multicolumn{2}{c}{step 100k} & \multicolumn{2}{c}{step 116k} & \multicolumn{2}{c}{step 126k} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Comparison & KL & cos & KL & cos & KL & cos \\
+\midrule
+P1 vs P3 \;L0H0\; (directionality)  & 0.301 & 0.687 & 0.155 & 0.844 & 0.207 & 0.802 \\
+P1 vs P4 \;L0H0\; (pos vs content)  & 0.193 & 0.857 & 0.132 & 0.876 & 0.139 & 0.876 \\
+\midrule
+P1 vs P3 \;L0H1\; (directionality)  & 0.351 & 0.638 & 0.466 & 0.632 & 0.426 & 0.593 \\
+P1 vs P4 \;L0H1\; (pos vs content)  & 0.495 & 0.484 & 0.549 & 0.511 & 0.354 & 0.561 \\
+\midrule
+P1 vs P3 \;L1H0\; (directionality)  & 0.181 & 0.813 & 0.093 & 0.909 & 0.079 & 0.915 \\
+P1 vs P4 \;L1H0\; (pos vs content)  & 0.041 & 0.965 & 0.047 & 0.948 & 0.034 & 0.963 \\
+\midrule
+P1 vs P3 \;L1H1\; (directionality)  & 0.442 & 0.611 & 0.571 & 0.485 & 0.293 & 0.738 \\
+P1 vs P4 \;L1H1\; (pos vs content)  & 0.130 & 0.914 & 0.177 & 0.900 & 0.122 & 0.890 \\
+\bottomrule
+\end{tabular}
+\caption{Probe comparison table across Stage~1.  Compare with
+  Table~\ref{tab:probe-comparison} for Stage~2.  L0H0 loses directional
+  sensitivity at Stage~1; L0H1 gains it.  L1H1 shows a transient peak in
+  directionality KL at 116k.}
+\label{tab:probe-stage1}
+\end{table}
+
+Four findings are specific to Stage~1.
+
+\paragraph{Finding 8: Stage~1 and Stage~2 are symmetric events — Stage~1 builds
+the PAD-bias shortcut that Stage~2 dismantles.}
+L1H0's OV norm grows from 0.295 to 0.576 across Stage~1 (2.06$\times$), the
+exact reverse of its 0.576$\to$0.149 collapse at Stage~2.  The OV figure
+(Figure~\ref{fig:ov-stage1}) shows the PAD row in L1H0 forming during Stage~1:
+at step~100k there is only a single bright cell; by step~116k the full saturated
+red band is present.  L1H1's opposing negative PAD row forms simultaneously.
+The model first discovered a coarse shortcut (inject a constant PAD-based
+offset), used it to bootstrap a first generalization step, and then eventually
+found a proper content-sensitive algorithm to replace it.
+
+\paragraph{Finding 9: Stage~1 is invisible in individual weight norms because
+it is a matrix-alignment event.}
+Individual W\textsubscript{V} and W\textsubscript{O} norms barely changed across
+Stage~1 (confirmed by the flat weight-norm trajectories at the 114k--125k band in
+Figure~\ref{fig:weight-norms}).  Yet the OV product
+$\|W_{E} W_V W_O W_U\|_F$ grew 2$\times$.  This is possible because
+$\|AB\|_F \leq \|A\|_F\|B\|_F$: two matrices can become better-aligned ---
+the right singular vectors of $W_V$ rotating to match the left singular vectors
+of $W_O$ --- doubling their product's norm while leaving both individual norms
+unchanged.  Stage~1 is thus a \emph{weight-rotation event} confined to the
+$W_V$/$W_O$ subspace of Layer~1; the individual-norm view was genuinely blind to
+it, not merely coarse-grained.
+
+\paragraph{Finding 10: L0H0 loses directional sensitivity at Stage~1.}
+L0H0's directionality KL falls from 0.301 to 0.155 at Stage~1 onset.  The head
+becomes less able to distinguish P1 from P3 as the model's accuracy improves.
+This is coherent: L0H0 is partially offloading its directional role to the
+PAD-bias shortcut being constructed in Layer~1, allowing Layer~0 to shift
+toward a more position-anchored reading strategy.
+
+\paragraph{Finding 11: L1H1 shows a transient directionality peak at Stage~1
+onset.}
+L1H1's directionality KL spikes to 0.571 (cosine 0.485) at step~116k, the
+highest it reaches in the entire 100k--196k range, then retreats to 0.293 by
+126k.  This transient signal at the exact onset of the transition is consistent
+with a head in mid-reorganization: briefly expressing content-sensitive behavior
+before its final role as the negative counterpart to L1H0's PAD bias is
+established.
+
+\paragraph{Unified two-stage picture.}
+The two grokking transitions are now mechanistically interpretable as a single
+lifecycle of a shortcut:
+\begin{enumerate}
+  \item \textbf{Stage~1 (114k--126k):} Layer~1 builds a PAD-token OV bias
+    (L1H0 positive, L1H1 negative).  The bias acts as a constant correction to
+    the output distribution that improves accuracy without requiring the model to
+    properly read graph structure.  This is a matrix-alignment event invisible to
+    per-weight Frobenius norms.  L0H0 offloads some of its directional role;
+    L0H1 gains directional sensitivity.
+  \item \textbf{Stage~2 (188k--192k):} Layer~1's PAD-bias is dismantled.
+    L0H1's OV circuit simultaneously doubles and its QK routing becomes more
+    content-sensitive.  The shortcut is replaced by a proper content-sensitive
+    circuit concentrated in L0H1.  The second, larger accuracy jump corresponds
+    to this replacement.
+\end{enumerate}
+The model's path through weight space is: memorize $\to$ shortcut
+(Stage~1) $\to$ proper generalization (Stage~2).  This is a three-phase grokking
+trajectory, not a single phase transition as in the original Power et al.\
+framing.
+
+\subsubsection{PAD-position ablation: causal validation}
+\label{sec:pad-ablation}
+
+The correlation evidence above identifies the PAD-token OV bias as the Stage~1
+shortcut. To test this causally, we zero the attention weight columns
+corresponding to PAD key positions in Layer~1 before value aggregation, and
+measure validation accuracy at four checkpoints spanning the full trajectory.
+Two ablation variants are tested:
+
+\begin{description}[noitemsep]
+  \item[Renormalized.] PAD columns zeroed; surviving weights rescaled row-by-row
+    to sum to~1. Tests whether PAD positions carry unique value information: if
+    redistributing the full attention budget to non-PAD positions hurts, PAD's
+    $V$ vectors are specifically useful, not just a neutral mass to absorb.
+  \item[No-renorm.] PAD columns zeroed; row sums left at $\sim$0.79 (since
+    $\sim$21\% of sequence positions are PAD for the typical 4-node graph). Tests
+    whether the PAD contribution is a magnitude effect: shrinking Layer~1's
+    total residual-stream contribution by 21\%.
+\end{description}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Step & baseline & renorm & no-renorm & $\Delta$ renorm & $\Delta$ no-renorm \\
+\midrule
+100k (pre-Stage~1)  & 0.744 & 0.738 & 0.740 & $-0.006$ & $-0.004$ \\
+126k (post-Stage~1) & 0.810 & 0.781 & 0.794 & $\mathbf{-0.029}$ & $-0.017$ \\
+160k (inter-stage)  & 0.815 & 0.804 & 0.808 & $-0.010$ & $-0.006$ \\
+196k (post-Stage~2) & 0.925 & 0.912 & 0.915 & $-0.013$ & $-0.010$ \\
+\bottomrule
+\end{tabular}
+\caption{PAD-position ablation on Layer~1 across four checkpoints.  Ablation
+  effect is largest at step~126k (shortcut fully built), confirming the causal
+  role of PAD-routing in the Stage~1 accuracy plateau.  At 196k the effect
+  shrinks substantially but does not return to the pre-shortcut (100k) level,
+  indicating a partial rather than complete dismantling of PAD dependence.}
+\label{tab:pad-ablation}
+\end{table}
+
+\paragraph{Finding 12: 126k has the largest PAD ablation effect, confirming the
+causal role of the shortcut.}
+Zeroing Layer~1's PAD attention columns costs 2.9\% validation accuracy at
+step~126k (renorm variant), the highest effect across all four checkpoints.  At
+step~100k the same ablation costs only 0.6\%, consistent with the shortcut not
+yet being built.  The contrast (2.9\% vs.\ 0.6\%) provides direct causal support
+for the PAD-bias shortcut narrative: the PAD-routing is specifically load-bearing
+at the end of Stage~1.
+
+\paragraph{Finding 13: Stage~2 substantially but not completely dismantles PAD
+dependence.}
+At step~196k the ablation effect is $-$1.3\% (renorm), much smaller than the
+$-$2.9\% at 126k but still more than twice the pre-shortcut baseline of $-$0.6\%.
+This indicates that Stage~2 removes most, but not all, of Layer~1's reliance on
+PAD positions.  Residual PAD routing persists even after the main transition,
+suggesting the dismantling is partial and gradual rather than a clean switch.
+
+\paragraph{Finding 14: Renormalization hurts more than no-renorm at every checkpoint
+--- PAD positions carry a specific beneficial value signal.}
+If the PAD-bias were purely a magnitude effect (Layer~1 just happens to write
+more to the residual stream by attending to many positions), shrinking the
+output by 21\% (no-renorm) should hurt at least as much as redirecting to
+non-PAD positions (renorm).  The opposite is observed at every checkpoint.
+When attention is redistributed to non-PAD positions (edge tokens, query tokens),
+Layer~1 writes something \emph{less} useful --- or slightly harmful --- to the
+residual stream.  This means the PAD token's value vector
+$W_{E}[\textsc{pad}] W_V$ encodes a genuinely beneficial direction for the model
+at this stage, not just a neutral mass for attention.
+
+\paragraph{Revised causal picture.}
+The three-phase grokking narrative is supported by causal intervention:
+
+\begin{enumerate}
+  \item \textbf{Stage~1 builds a PAD-token shortcut} (Finding~8, confirmed by
+    Finding~12). Layer~1 learns to attend to PAD positions and write a
+    PAD-specific value direction into the residual stream. This is specifically
+    useful (Finding~14), not incidental.
+  \item \textbf{Stage~2 substantially dismantles PAD reliance} (confirmed by
+    Findings~12 and~13). The OV circuit reorganization visible in the weight
+    analysis corresponds to a real reduction in behavioral dependence on PAD
+    routing --- but the dismantling is incomplete.
+  \item \textbf{The PAD-bias signal is directional, not merely a bias amplitude.}
+    The renorm/no-renorm comparison shows that what Layer~1 does with PAD
+    attention is specific to the PAD embedding's value projection, not just
+    a scaling effect on Layer~1's total contribution.
+\end{enumerate}
+
+\subsubsection{PAD value vector: what the shortcut encodes}
+\label{sec:pad-value}
+
+The ablation established that PAD routing is load-bearing at 126k. To identify
+\emph{what} the shortcut encodes, we project $W_E[\textsc{pad}] W_{V,h} W_{O,h} W_U$
+--- row 6 of the OV circuit matrix --- for each Layer~1 head at the key checkpoints.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llrrrrrrrr@{}}
+\toprule
+Step & Head & \texttt{0} & \texttt{1} & \texttt{2} & \texttt{3}
+          & \textsc{edge} & \textsc{qry} & \textsc{pad} & \textsc{inf} \\
+\midrule
+100k & L1H0 & $-$0.032 & $-$0.048 & $-$0.086 & $+$\textbf{0.217}
+             & $-$0.032 & $-$0.032 & $-$0.032 & $+$0.102 \\
+     & L1H1 & $-$0.067 & $+$0.090 & $+$0.059 & $-$0.177
+             & $-$0.067 & $-$0.067 & $-$0.067 & $-$0.131 \\
+\midrule
+126k & L1H0 & $+$0.264 & $-$0.041 & $-$0.064 & $+$0.155
+             & $+$\textbf{0.264} & $+$\textbf{0.264} & $+$\textbf{0.264} & $+$0.119 \\
+     & L1H1 & $-$0.235 & $+$0.028 & $+$0.039 & $-$0.126
+             & $-$\textbf{0.235} & $-$\textbf{0.235} & $-$\textbf{0.235} & $-$0.042 \\
+\midrule
+196k & L1H0 & $+$0.007 & $-$0.087 & $+$0.035 & $-$0.057
+             & $+$0.007 & $+$0.007 & $+$0.007 & $+$0.064 \\
+     & L1H1 & $+$0.212 & $-$0.005 & $-$0.037 & $+$0.052
+             & $+$0.212 & $+$0.212 & $+$0.212 & $+$0.035 \\
+\bottomrule
+\end{tabular}
+\caption{PAD row of the OV circuit matrix for Layer~1 heads at three
+  checkpoints. Bold: the four impossible-answer tokens (0, EDGE, QRY, PAD)
+  receive identical values at 126k, indicating a common direction in logit space.
+  Among valid answer tokens (1, 2, 3, INF), L1H0 and L1H1 are anti-correlated
+  at every checkpoint.}
+\label{tab:pad-row}
+\end{table}
+
+Four structural findings emerge from this table.
+
+\paragraph{Finding 15: Impossible-answer tokens cluster in the PAD OV row.}
+At step~126k, tokens \texttt{0}, \textsc{edge}, \textsc{qry}, and \textsc{pad}
+all receive the same logit contribution ($+0.264$ for L1H0; $-0.235$ for L1H1).
+These are precisely the tokens that can never be a correct shortest-path answer
+in the training data: path length~0 never appears (src$\neq$dst always), and
+the special tokens are not path lengths. Their identical values indicate that
+the PAD embedding's projection through $W_V W_O$ has equal dot product with all
+four of these columns of $W_U$ --- they occupy a common direction in unembedding
+space, consistent with them all being \emph{non-answer} tokens.
+
+\paragraph{Finding 16: The net valid-token PAD bias is a prior toward longer
+distances and unreachability.}
+Among valid answer tokens at 126k, the combined L1H0$+$L1H1 contribution pushes
+\emph{toward} longer distances (\texttt{3}: net $+0.029$, \textsc{inf}: net
+$+0.077$) and \emph{away from} shorter distances (\texttt{1}: net $-0.013$,
+\texttt{2}: net $-0.025$). Scaled by the $\sim$21\% mean PAD attention fraction,
+the effective logit bias is $\sim$0.016 toward \textsc{inf} and $\sim$0.006
+toward \texttt{3}.  This is a learned default: \emph{when uncertain, prefer
+longer paths and unreachability.}  In a 4-node directed graph, \textsc{inf} is
+the most common single answer, making this prior sensible.
+
+\paragraph{Finding 17: The early ``uniformly saturated'' description was imprecise.}
+Earlier analysis described L1H0's PAD row as ``uniformly saturated.'' The
+numerical values show this was inaccurate: the PAD row has clear token-level
+structure (impossible-answer tokens at $+0.264$; valid tokens at $-0.086$ to
+$+0.155$; range $0.327$). The visual saturation in the heatmap reflected the
+absolute magnitude of the values, not token-level uniformity. The corrected
+description: L1H0's PAD row is a structured vector that (i)~groups all
+impossible-answer tokens at a common maximum, and (ii)~biases valid-answer
+predictions toward longer distances.
+
+\paragraph{Finding 18: The PAD value direction changes sign at Stage~2.}
+By step~196k, the roles of L1H0 and L1H1 have partially swapped: L1H1 now
+pushes toward impossible-answer tokens ($+0.212$ each) while L1H0 now pushes
+toward \textsc{inf} and away from \texttt{1}.  The Stage~2 reorganization did
+not simply reduce the magnitude of the PAD contribution --- it changed its
+\emph{direction} in logit space, consistent with a fundamental restructuring of
+the circuit rather than a scalar down-weighting.
+
+% ---------------------------------------------------------------------------
+\subsubsection{QK circuit analysis: L0H1 routing}
+\label{sec:qk-analysis}
+% ---------------------------------------------------------------------------
+
+The token-type QK circuit $\text{scale} \cdot W_E W_Q W_K^\top W_E^\top$
+(shape: vocab $\times$ vocab) captures the attention score contribution from
+token-type affinity alone: entry $[i,j]$ is the raw score added when the query
+position holds token type $i$ and the key position holds token type $j$,
+independent of sequence position.  This is one of four bilinear terms in the
+full attention score (the other three involve positional embeddings); it tells
+us which token types are attracted to each other by identity.
+
+For the prediction task, the query at the final sequence position holds the
+destination node token (\texttt{dst} $\in \{0,1,2,3\}$).  What this head
+attends to is determined by the overlap between \texttt{dst}'s QK contribution
+and the key vectors of every upstream position.
+
+\paragraph{Finding 19: L0H1 develops a token-identity QK circuit at Stage~2.}
+At step~196k, the $4 \times 4$ node-token subblock of L0H1's QK matrix is
+strongly diagonal-dominant:
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+query $\backslash$ key & node~0 & node~1 & node~2 & node~3 \\
+\midrule
+node~0 & $\mathbf{+0.018}$ & $-0.005$ & $-0.005$ & $-0.009$ \\
+node~1 & $-0.004$ & $\mathbf{+0.014}$ & $-0.006$ & $-0.004$ \\
+node~2 & $-0.008$ & $-0.006$ & $\mathbf{+0.017}$ & $-0.002$ \\
+node~3 & $-0.010$ & $-0.003$ & $-0.003$ & $\mathbf{+0.015}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Each node token type preferentially attends to positions that hold the
+\emph{same} node token, and suppresses attention to positions with a different
+node token.  At the prediction position, the query is \texttt{dst} (e.g., node
+2); L0H1 therefore attends toward all sequence positions that also contain
+token~2 --- precisely the edge triplets in which node~2 appears as either
+source or destination.
+
+In other words: \textbf{L0H1's QK circuit implements ``find edges involving
+the destination node.''} This is the first step of a backward reachability
+search from dst --- collecting the immediate neighborhood of the query target.
+
+\paragraph{Finding 20: L0H1's QK circuit crystallizes at Stage~2, co-evolving
+with its OV circuit.}
+At step~126k the diagonal signal is present but weaker and noisier (strongest
+diagonal entry: $+0.019$ for node~3 only; other node diagonals are small and
+surrounded by inconsistent off-diagonals).  At step~196k the diagonal is clean
+and consistent across all four node values ($+0.014$ to $+0.018$) with
+uniformly negative off-diagonals.  The QK circuit does not crystallize before
+Stage~2; it strengthens simultaneously with the $\sim$97\% OV norm growth.
+Both the routing (QK) and the writing (OV) components of L0H1's computation
+develop together during Stage~2.
+
+\paragraph{Finding 21: L0H0 has no structured QK routing.}
+L0H0's token-type QK entries are small ($\le 0.013$) and inconsistent across
+checkpoints: max-key preferences shift (e.g., node~2 prefers key~3 at 126k
+but key~1 at 196k).  L0H0 does not implement a clean token-type attention
+circuit at either Stage, consistent with its mixed role in the probe
+comparison analysis (Finding~2).
+
+\paragraph{Finding 22: L1H0 and L1H1 show strong PAD self-preference in
+token-type QK.}
+L1H0's QK[PAD, PAD] grows from $+0.029$ at 126k to $+0.058$ at 196k, the
+largest single entry in any head's QK matrix.  L1H1's QK[PAD, PAD] is $+0.044$
+at 196k.  This PAD self-attraction in the QK circuit reinforces the OV
+analysis: L1H0 and L1H1 route attention toward PAD positions not just through
+the positional/magnitude structure of the sequence, but also through a learned
+token-type affinity.
+
+\paragraph{Open question answered: L0H1's OV circuit.}
+See Section~\ref{sec:l0h1-ov} for the full analysis.  L0H1 writes a
+node-conditioned distance prior (Findings~29--31).  The positional component
+of its value vectors likely carries the richer structural signal.
+
+% ---------------------------------------------------------------------------
+\subsubsection{L0H1 OV circuit: what it writes}
+\label{sec:l0h1-ov}
+% ---------------------------------------------------------------------------
+
+The token-type OV circuit $W_E W_{V,h} W_{O,h} W_U$ for L0H1 (layer~0,
+head~1) answers: when this head attends to a position holding token type~$i$,
+how much does it add to logit~$j$ at the query position?
+
+The rows that actually fire via the QK circuit are the node-token rows (0--3),
+since L0H1's token-identity QK routing selects positions holding the same node
+token as dst.
+
+\begin{table}[H]
+\centering
+\caption{L0H1 full OV circuit: node-token rows at step 196k.  Each row shows
+the logit contribution when L0H1 attends to a position holding that node
+token.  Impossible-answer tokens (0, EDGE, QRY, PAD) appear at identical
+values within each row (marked as $c$) due to their shared direction in
+$W_U$'s column space.  Only valid-answer logit offsets differ.}
+\label{tab:l0h1-ov}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Attended token & dist=1 & dist=2 & dist=3 & INF & impossible-tok. ($c$) \\
+\midrule
+node~0 & $-0.003$ & $-0.002$ & $\mathbf{+0.008}$ & $-0.002$ & $+0.010$ \\
+node~1 & $+0.002$ & $+0.002$ & $+0.000$ & $-0.004$ & $+0.029$ \\
+node~2 & $\mathbf{+0.011}$ & $-0.004$ & $+0.005$ & $-0.006$ & $-0.010$ \\
+node~3 & $\mathbf{+0.012}$ & $+0.001$ & $-0.007$ & $-0.003$ & $-0.007$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Finding 29: L0H1's token-type OV circuit writes a node-conditioned
+distance prior.}
+At step~196k, node tokens~2 and~3 push the dist=1 logit most strongly
+($+0.011$ and $+0.012$); node~0 pushes toward dist=3 ($+0.008$); node~1 is
+nearly neutral.  This is a learned per-destination prior: when dst is node~2
+or node~3, attending to positions with that token nudges the output toward
+``distance 1''; when dst is node~0, it nudges toward ``distance 3.''  This
+reflects the statistical structure of the training distribution (node~0 is
+more frequently at longer distances from the query source in the training
+graphs) rather than a structural adjacency computation.
+
+\paragraph{Finding 30: Impossible-answer tokens are grouped at identical
+values in every node-token row.}
+Tokens 0, EDGE, QRY, and PAD share a common direction in $W_U$'s column
+space, so any head's output projects onto all four equally.  Within each
+node-token row, these four values are always identical (e.g., all $+0.029$
+for node~1 at 196k; all $-0.010$ for node~2).  The OV circuit therefore has
+no differential contribution to the impossible-answer subspace --- it
+influences only the relative logits among valid answer tokens.
+
+\paragraph{Finding 31: L0H1's OV circuit was partially structured before
+Stage~2; its QK circuit crystallized later.}
+At step~126k, the impossible-answer clustering in the node-token rows is
+already present, and rows~2 and~3 already push toward dist=1 ($+0.016$ and
+$+0.009$).  By contrast, L0H1's QK circuit at 126k is noisy and only weakly
+diagonal.  The two components of L0H1's circuit evolved on different
+schedules: the \emph{value component} (what to write) was partially in place
+at Stage~1, while the \emph{routing component} (where to look) crystallized
+at Stage~2.
+
+\paragraph{Limitation: token-type OV captures only part of the story.}
+The formula $W_E W_V W_O W_U$ captures the token-type component of the value
+vectors only.  The full value at an attended position is
+$W_V(W_E[\text{token}] + W_{\text{pos}}[\text{position}])$; the positional
+term $W_V W_{\text{pos}}[p]$ varies by where in the sequence the position
+sits.  The token-type matrix has ranges of $0.013$--$0.034$ for node-token
+rows --- modest compared to the PAD row (range $0.129$) or the EDGE row
+(range $0.054$).  The $\sim$78\% dist=1 accuracy Layer~0 achieves (logit
+lens, Finding~25) likely relies substantially on the positional component,
+which discriminates between positions where dst is an edge destination
+$[\text{EDGE},\, x,\, \text{dst}]$ (predecessors of dst, directly relevant
+for path-finding) versus an edge source $[\text{EDGE},\, \text{dst},\, y]$
+(successors of dst, less directly relevant).
+
+% ---------------------------------------------------------------------------
+\subsubsection{Logit lens: per-layer contribution and algorithmic decomposition}
+\label{sec:logit-lens}
+% ---------------------------------------------------------------------------
+
+The logit lens \citep{nostalgebraist2020} projects the residual stream at
+each layer through \texttt{ln\_final} and $W_U$ to read the model's partial
+prediction at that depth.  For a 2-layer model:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{embed\_only}: $\LN_{\text{final}}(W_E[\text{tokens}] +
+    W_{\text{pos}})[\text{dst}] \cdot W_U$ --- no attention, raw embeddings.
+  \item \textbf{after\_L0}: residual stream after Layer~0, before Layer~1.
+  \item \textbf{full\_model}: residual stream after both layers (standard
+    forward pass).
+\end{itemize}
+
+Applying \texttt{ln\_final} to intermediate states is a standard
+approximation; it is exact only for the final layer.
+
+\begin{table}[H]
+\centering
+\caption{Logit lens accuracy by layer depth and answer category, Run~5.
+  Step~126k (shortcut phase) and 196k (full model).  $n$: number of validation
+  examples per category ($n_{\text{val}}=480$).}
+\label{tab:logit-lens}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+Step & Depth & Overall & dist=1 ($n{=}181$) & dist=2 ($n{=}92$) &
+      dist=3 ($n{=}21$) & INF ($n{=}186$) \\
+\midrule
+126k & embed\_only  & 0.377 & 1.000 & 0.000 & 0.000 & 0.000 \\
+     & after\_L0    & 0.456 & 0.796 & 0.109 & 0.048 & 0.344 \\
+     & full\_model  & 0.810 & 0.901 & 0.554 & 0.190 & 0.919 \\
+     & $\Delta$ L1  &       & $+0.105$ & $+0.446$ & $+0.143$ & $+0.575$ \\
+\midrule
+196k & embed\_only  & 0.346 & 0.757 & 0.315 & 0.000 & 0.000 \\
+     & after\_L0    & 0.575 & 0.779 & 0.174 & 0.476 & 0.586 \\
+     & full\_model  & 0.925 & 0.994 & 0.870 & 0.238 & 0.962 \\
+     & $\Delta$ L1  &       & $+0.215$ & $\mathbf{+0.696}$ &
+       $\mathbf{-0.238}$ & $+0.376$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Finding 23: At 126k, the raw embedding predicts ``distance 1''
+for all examples.}
+The embed\_only row at 126k achieves exactly $181/480 = 37.7\%$ overall with
+100\% on dist=1 and 0\% on all other categories.  This is a constant
+prediction: $W_E[\text{dst}] + W_{\text{pos}}[21]$ projects to the highest
+logit for token~1 regardless of the actual graph.  It is not real signal ---
+it reflects the embedding geometry at the shortcut stage, where the model has
+not yet developed structured embeddings.
+
+\paragraph{Finding 24: By 196k, the embedding geometry carries partial
+semantic content.}
+At step~196k, embed\_only achieves 75.7\% on dist=1 and 31.5\% on dist=2,
+with 0\% on dist=3 and INF.  The model is no longer making a constant
+prediction: different dst token identities project to different predictions.
+This reflects joint training of $W_E$ and $W_U$ --- by Stage~2 the embedding
+of each node has learned a statistical prior over that node's typical distance
+in the training distribution.  This is a property of the embeddings, not an
+algorithmic computation.
+
+\paragraph{Finding 25: Layer~0 alone handles $\sim$78\% of distance-1 cases
+at 196k.}
+After Layer~0 at step~196k, dist=1 accuracy is 77.9\%  --- far above the
+34.6\% embed\_only baseline and only 21.5 percentage points below the full
+model (99.4\%).  This confirms the QK analysis: L0H1's token-identity matching
+routes the dst-position query toward edge triplets containing dst, and the
+resulting OV contribution is sufficient to correctly answer most direct
+adjacency queries.  Layer~0 is the primary circuit for distance-1.
+
+\paragraph{Finding 26: Layer~1's largest contribution at 196k is distance-2
+(+69.6 pp).}
+Layer~0 alone achieves only 17.4\% on dist=2 examples; the full model
+achieves 87.0\%.  Layer~1 provides essentially all of the 2-hop reasoning.
+This is consistent with a two-step backward BFS: Layer~0 collects predecessors
+of dst; Layer~1 checks whether src can reach any of those predecessors in one
+hop (i.e., whether a path src $\to x \to$ dst exists).
+
+\paragraph{Finding 27: Layer~1 hurts performance on distance-3 ($-23.8$ pp).}
+After Layer~0 at step~196k, dist=3 accuracy is 47.6\% (10 of 21 examples
+correct).  After adding Layer~1, dist=3 accuracy falls to 23.8\% (5 of 21).
+Layer~1's computation --- optimized for distance-1 and distance-2 ---
+actively misclassifies distance-3 paths.  The most likely cause: Layer~1
+checks whether src can reach a direct predecessor of dst in one hop; for
+paths src $\to x \to y \to$ dst, no such check succeeds (src cannot reach $y$
+directly), so Layer~1 re-routes the prediction toward INF or a shorter
+distance, producing the wrong answer.  Distance-3 requires a third BFS step
+that the 2-layer architecture cannot perform.
+
+\paragraph{Finding 28: At 126k, Layer~1's dominant contribution is the INF
+shortcut (+57.5 pp).}
+The logit lens quantifies the Stage-1 PAD-bias shortcut directly: Layer~1 at
+126k contributes +57.5 percentage points on INF cases and +44.6 pp on dist=2,
+both far larger than Layer~0's contribution to those categories.  The
+ablation-confirmed PAD-bias (Findings~12--14) is the mechanism; the logit lens
+shows its magnitude.
+
+\paragraph{The learned algorithm: partial two-step backward BFS.}
+Combining Findings~19--28 and the earlier circuit analyses, the most
+parsimonious account of the fully-trained model (196k) is:
+
+\begin{enumerate}
+  \item \textbf{Layer~0 (L0H1)}: The dst-position query attends to all
+    sequence positions containing the dst token (token-identity QK circuit,
+    Finding~19).  The OV contribution writes information about dst's
+    immediate neighborhood into the residual stream.  After this step,
+    the model can answer $\sim$78\% of distance-1 queries correctly.
+  \item \textbf{Layer~1}: Reads the residual stream (which now encodes dst's
+    neighborhood) and checks whether src can reach any of dst's direct
+    predecessors.  This handles:
+    \begin{itemize}[noitemsep]
+      \item Distance-1: confirms src is itself a direct predecessor of dst
+        ($+21.5$ pp improvement).
+      \item Distance-2: identifies whether src has a direct edge to a
+        predecessor of dst ($+69.6$ pp improvement --- the main Layer~1
+        contribution).
+      \item INF: confirms that no predecessor of dst is reachable from src
+        ($+37.6$ pp improvement).
+    \end{itemize}
+  \item \textbf{Distance-3 failure}: The model has no third layer to perform
+    a third BFS step.  Layer~1's computation misclassifies distance-3 paths
+    (src $\to x \to y \to$ dst) because it cannot verify that src can reach
+    a second-order predecessor $y$ indirectly.  This is an architectural
+    limitation, not a training failure.
+\end{enumerate}
+
+\textbf{Remaining uncertainty}: L0H1's positional-component value contribution
+--- how the positional term $W_V W_{\text{pos}}[p]$ discriminates between
+predecessor and non-predecessor edge positions --- has not been fully
+characterized at the token-type level.  This is the one remaining piece for
+a complete mechanistic account; the narrative below treats it as the mechanism
+that delivers the 78\% dist=1 accuracy at Layer~0.
+
+% ---------------------------------------------------------------------------
+\subsection{The algorithm: a complete narrative}
+\label{sec:algorithm-narrative}
+% ---------------------------------------------------------------------------
+
+The following is a step-by-step account of what the fully trained model
+(step~196k) does when it processes a shortest-path query.  It synthesises
+all Phase~3 findings into a single coherent description.
+
+\subsubsection*{Input}
+
+The model receives a sequence of 21 tokens encoding a random directed graph
+on 4 nodes and a query.  Each directed edge $a \to b$ is encoded as the
+triplet $[\textsc{edge},\, a,\, b]$; unused slots are filled with
+$\textsc{pad}$.  The last three tokens are $[\textsc{qry},\, \text{src},\,
+\text{dst}]$.  The prediction is read from the last token position (the
+\texttt{dst} position).
+
+\subsubsection*{Layer 0 --- collecting dst's neighborhood}
+
+Head L0H1 implements a \textbf{token-identity QK circuit}: the dst position's
+query vector attends preferentially to every sequence position that holds the
+same node token as dst.  In the edge list, those are the triplets in which
+the destination node appears as either an edge source or an edge destination.
+L0H1 effectively scans the sequence and collects the positions in which dst
+plays a role in any edge.
+
+What L0H1 writes back to the residual stream (its OV contribution) has two
+components.  The token-type component is a node-conditioned prior: for dst
+$\in \{$node~2, node~3$\}$, it nudges the output toward dist=1; for dst =
+node~0, it nudges toward dist=3.  This reflects statistical regularities in
+the training data.  The positional component of the value vectors --- not
+fully characterised at the token-type level --- discriminates between
+positions where dst is an edge \emph{destination} (predecessors of dst,
+directly useful for backward path-finding) versus an edge \emph{source}
+(successors of dst).  Together, these contributions give Layer~0 the
+information needed to answer approximately 78\% of distance-1 queries
+correctly.
+
+Head L0H0 has no clean token-type routing circuit and contributes a mixed,
+weaker signal, likely dominated by positional terms.
+
+\subsubsection*{Layer 1 --- completing the path check}
+
+Layer 1 reads the residual stream at the dst position, which now contains:
+the original token embedding, L0H1's edge-neighborhood information, and
+L0H0's weaker contribution.
+
+Layer 1 performs the critical second step: it checks whether src can reach
+any of dst's direct predecessors.  Concretely:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Distance 1} (src $\to$ dst directly): src is itself a direct
+    predecessor of dst.  Layer~1 confirms the connection, providing $+21.5$ pp
+    improvement over Layer~0's already strong 77.9\% baseline.
+  \item \textbf{Distance 2} (src $\to x \to$ dst): $x$ is a direct
+    predecessor of dst (found by Layer~0); Layer~1 confirms that src has a
+    direct edge to $x$.  This is Layer~1's primary contribution: $+69.6$ pp
+    improvement over Layer~0's 17.4\% on distance-2 cases.
+  \item \textbf{INF} (dst unreachable from src): no predecessor of dst is
+    reachable from src in one hop.  Layer~1 confirms the absence of a
+    connecting edge.  Improvement: $+37.6$ pp.
+\end{itemize}
+
+At step 126k (before Stage~2), Layer~1 used a different strategy for the INF
+and longer-distance cases: the PAD-bias shortcut.  By attending to PAD
+positions and injecting a constant logit bias toward INF and dist=3, it
+achieved above-chance accuracy without performing any structural computation.
+Stage~2 replaced this shortcut with the genuine path-checking circuit
+described above.
+
+\subsubsection*{Distance-3 and the architectural limit}
+
+For a 3-hop path src $\to x \to y \to$ dst, the model fails systematically.
+Layer~0 identifies $y$ as a predecessor of dst.  Layer~1 checks whether src
+has a direct edge to $y$ --- it does not ($y$ is reachable from src only
+through $x$).  Layer~1 therefore concludes that no predecessor of dst is
+directly reachable from src, and pushes the prediction toward INF or a
+shorter distance.  The full model achieves only 23.8\% on distance-3 examples,
+compared to 47.6\% from Layer~0 alone --- Layer~1 actively degrades the
+answer.  A two-layer backward BFS cannot handle a three-edge path; this is
+an architectural limitation, not a training failure.
+
+\subsubsection*{Summary}
+
+This model implements a \textbf{partial two-step backward BFS from the
+destination node}, one BFS step per layer.  Layer~0 collects the set of nodes
+adjacent to dst; Layer~1 checks whether src can reach any of those nodes
+directly.  Distances 1 and 2 are handled well; distance 3 exceeds the
+architecture's depth.  The two accuracy jumps in the training curve are not
+two instances of the same phenomenon: Stage~1 is the \emph{construction} of a
+statistical shortcut (PAD-position logit bias), and Stage~2 is its
+\emph{replacement} by a genuine graph-structural computation.
+
 \subsection{Phase 3 toolkit (\texttt{src/interp/})}
 
 \subsubsection{\texttt{weight\_analysis.py}}
@@ -2090,6 +2903,59 @@ Prints Frobenius norms of the full OV matrix at each checkpoint plus the
 relative change $\|\Delta OV\|_F / \|OV_{\text{first}}\|_F$.
 
 \begin{lstlisting}
+print_pad_value_analysis(checkpoint_paths, layers=(1,), n_heads=2,
+                         pad_token=6, mean_pad_fraction=0.21)
+\end{lstlisting}
+
+For each head in the specified layers, prints the PAD row of the OV circuit
+matrix ($W_E[\textsc{pad}] W_V W_O W_U$, shape \texttt{(vocab\_size,)}), the
+effective logit bias (\texttt{mean\_pad\_fraction} $\times$ raw row), the
+softmax of the raw row (implied prediction under pure PAD attention), and the
+peak/trough token.  See Table~\ref{tab:pad-row} and
+Section~\ref{sec:pad-value} for interpretation.
+
+\begin{lstlisting}
+print_ov_full(checkpoint_paths, layer, head)
+\end{lstlisting}
+
+Prints the complete $8 \times 8$ OV circuit matrix for one (layer, head) pair
+at each checkpoint, with per-row max/min annotations and range, plus a
+row-max summary (top-3 output logits pushed by each attended token type).
+Mirrors the format of \texttt{print\_qk\_analysis}.  See
+Table~\ref{tab:l0h1-ov} and Section~\ref{sec:l0h1-ov} for the L0H1 result.
+
+\begin{lstlisting}
+compute_qk_circuit(params, layer, head) -> np.ndarray  # (vocab, vocab)
+\end{lstlisting}
+
+Compute the token-type QK circuit matrix
+$\text{scale} \cdot W_E W_{Q,h} W_{K,h}^\top W_E^\top$ for one head.
+Entry $[i,j]$: attention score contribution from token-type affinity when
+the query position holds token $i$ and the key position holds token $j$.
+Scale factor is $d_{\text{head}}^{-0.5}$.  Captures the token-identity term
+only; positional-embedding cross-terms are excluded.
+
+\begin{lstlisting}
+plot_qk_comparison(checkpoint_paths,
+                   save_path="notebooks/qk_circuits.png",
+                   n_layers=2, n_heads=2)
+\end{lstlisting}
+
+Saves a grid of QK circuit heatmaps (rows = checkpoints + difference row,
+cols = heads) to \texttt{save\_path}.  Same RdBu\_r diverging colormap
+convention as \texttt{plot\_ov\_comparison}.  Axes: query token (row) vs.\
+key token (column).
+
+\begin{lstlisting}
+print_qk_analysis(checkpoint_paths, layers=(0,), n_heads=2)
+\end{lstlisting}
+
+Prints the full $8 \times 8$ token-type QK matrix for each specified head at
+each checkpoint, with per-row max/min annotations and a row-max summary
+(top-3 key preferences per query token type).  See
+Section~\ref{sec:qk-analysis} for interpretation of the L0H1 result.
+
+\begin{lstlisting}
 compare_probe_pair(params, spec_a, spec_b, layer, head,
                    n_layers=2, n_heads=2) -> dict
     # keys: 'kl_sym' (float), 'cos_sim' (float)
@@ -2110,6 +2976,51 @@ Prints a formatted table of KL and cosine results for a list of
 supplied checkpoints.  Defaults to the two primary tests: P1~vs~P3 on L0H0
 (directionality) and P1~vs~P4 on L0H0 (position vs.\ content).  See
 Table~\ref{tab:probe-comparison} for full four-head results.
+
+\subsubsection{\texttt{ablation.py}}
+
+\begin{lstlisting}
+run_pad_ablation(checkpoint_paths, val_tokens, val_labels, ablate_layer=1)
+\end{lstlisting}
+
+Evaluates Layer~\texttt{ablate\_layer} PAD-position ablation across all supplied
+checkpoints. For each checkpoint, runs three conditions on the full validation
+set (baseline, renorm, no-renorm) and prints a summary table with deltas.
+Expected runtime: $\sim$10~seconds per checkpoint on Apple Silicon CPU.
+
+\begin{lstlisting}
+_numpy_forward_pass(params, tokens, n_layers=2, n_heads=2,
+                    ablate_layer=None, renormalize=True) -> np.ndarray
+\end{lstlisting}
+
+Full single-example forward pass replicating \texttt{ShortestPathTransformer}
+exactly: token embedding, positional embedding, per-layer pre-norm attention with
+residual, final layer norm (\texttt{ln\_final}), unembedding via $W_U$.  Returns
+\texttt{(vocab\_size,)} logits at the last (dst) sequence position.  If
+\texttt{ablate\_layer} is set, PAD key columns in that layer's attention matrix
+are zeroed before value aggregation; if \texttt{renormalize=True}, surviving row
+weights are rescaled to sum~to~1.
+
+\subsubsection{\texttt{logit\_lens.py}}
+
+\begin{lstlisting}
+run_logit_lens(checkpoint_paths, val_tokens, val_labels)
+\end{lstlisting}
+
+For each checkpoint, prints a table of per-category validation accuracy
+(dist=1, dist=2, dist=3, INF) at three depths: embedding only (no attention),
+after Layer~0, and full model.  Also prints the Layer~1 delta row.  See
+Table~\ref{tab:logit-lens} and Section~\ref{sec:logit-lens}.
+
+\begin{lstlisting}
+_forward_to_depth(params, tokens, stop_after_layer, n_heads=2) -> np.ndarray
+\end{lstlisting}
+
+Full forward pass to a specified depth, returning logits via
+$\LN_{\text{final}}(x[-1]) \cdot W_U$.  \texttt{stop\_after\_layer=-1}:
+embedding only; \texttt{stop\_after\_layer=0}: Layer~0 only;
+\texttt{stop\_after\_layer=None}: full model.  Applying \texttt{ln\_final} to
+intermediate residual streams is the standard logit-lens approximation.
 
 % =============================================================================
 \section{Testing}
@@ -2186,18 +3097,29 @@ Test & What it checks \\
 |       |-- attention_viz.py    PROBE_SPECS, build_probe_tokens,
 |       |                       extract_attention_weights, plot_attention_grid,
 |       |                       compare_probe_pair, run_probe_comparisons
-|       `-- ov_circuit.py       compute_ov_circuit, plot_ov_comparison,
-|                               print_ov_frobenius
+|       |-- ov_circuit.py       compute_ov_circuit, plot_ov_comparison,
+|       |                       print_ov_frobenius, print_pad_value_analysis,
+|       |                       compute_qk_circuit, plot_qk_comparison,
+|       |                       print_qk_analysis
+|       |-- ablation.py         _numpy_forward_pass, run_pad_ablation
+|       `-- logit_lens.py       _forward_to_depth, run_logit_lens
 |-- scripts/
 |   |-- train.py          CLI entry point for training
-|   `-- diagnose.py       pipeline diagnostic: 6 isolated tests to locate XLA bugs
+|   |-- diagnose.py       pipeline diagnostic: 6 isolated tests to locate XLA bugs
+|   |-- run_ablation.py   PAD-position ablation experiment (Layer 1, 4 checkpoints)
+|   |-- run_qk_analysis.py  QK circuit analysis (L0H1 at 126k/196k)
+|   |-- run_logit_lens.py   logit lens per-category accuracy (126k/196k)
+|   `-- run_l0h1_ov.py      L0H1 full OV circuit analysis (126k/196k)
 |-- notebooks/
 |   |-- documentation.tex         this file
 |   |-- weight_norms.png          norm trajectory plot (Run 5, all 100 checkpoints)
 |   |-- weight_norms_table.txt    anchor checkpoint norm table (8 checkpoints)
 |   |-- attention_patterns.png    6-probe x 3-checkpoint x 4-head attention grid
 |   |-- attention_190k_zoom.png   zoom: step 190k, all four heads
-|   `-- ov_circuits.png           OV circuit heatmaps + diff row, all heads
+|   |-- ov_circuits.png           OV circuit heatmaps + diff row (Stage 2 window)
+|   |-- ov_circuits_stage1.png   OV circuit heatmaps + diff row (Stage 1 window)
+|   |-- qk_circuits.png          QK circuit heatmaps + diff row (126k vs 196k)
+|   `-- ov_l0_circuits.png       L0 OV circuit heatmaps + diff row (126k vs 196k)
 |-- tests/
 |   |-- test_data.py      14 data pipeline tests
 |   `-- test_model.py     5 model tests
@@ -2206,6 +3128,7 @@ Test & What it checks \\
 
 % =============================================================================
 \section{Roadmap}
+\label{sec:roadmap}
 % =============================================================================
 
 \begin{description}
@@ -2233,18 +3156,58 @@ Test & What it checks \\
         position-invariant, L1H1 lost sensitivity at Stage~2
         (see Section~\ref{sec:probe-comparison}).
       \item[3.3 (Done)] OV circuit analysis: full $W_E W_V W_O W_U$ matrices
-        computed for all four heads at 126k/190k/196k; PAD-bias shortcut
-        identified in L1H0/L1H1 at 126k; Stage~2 confirmed as OV-circuit
-        reorganization with L0H1 as beneficiary
-        (see Section~\ref{sec:ov-findings}).
-      \item[3.4 (Planned)] Direction/rotation analysis: cosine similarity of
-        weight matrices across checkpoints to test the Stage~1 direction
-        hypothesis (\texttt{weight\_cosine.py}).
-      \item[3.5 (Planned)] Activation patching and logit lens.
+        computed for all heads at Stage~1 (100k/116k/126k) and Stage~2
+        (126k/190k/196k); PAD-bias shortcut built at Stage~1 and dismantled at
+        Stage~2; three-phase grokking trajectory established; matrix-alignment
+        hypothesis confirmed for Stage~1 invisibility in weight norms
+        (Sections~\ref{sec:ov-findings}, \ref{sec:stage1-analysis}).
+      \item[3.4 (Done)] Causal validation: PAD-position ablation on Layer~1
+        across four checkpoints (100k/126k/160k/196k); both renormalized and
+        no-renorm variants; largest effect at 126k ($-$2.9\%), smallest at
+        100k ($-$0.6\%); Stage~2 substantially reduces but does not eliminate PAD
+        dependence; renorm consistently hurts more than no-renorm, indicating
+        PAD key positions carry a specific beneficial value signal
+        (Section~\ref{sec:pad-ablation}).
+      \item[3.5 (Done)] PAD value vector: projected $W_E[\textsc{pad}] W_V W_O W_U$
+        for all Layer~1 heads at 100k/126k/196k; impossible-answer tokens cluster
+        at a common maximum; net valid-token bias is a prior toward longer distances
+        and \textsc{inf}; Stage~2 changes the direction (not just magnitude) of the
+        PAD value projection; corrected earlier ``uniformly saturated'' description
+        (Findings~15--18, Section~\ref{sec:pad-value}).
+      \item[3.6 (Done)] QK circuit analysis: token-type QK matrix
+        $\text{scale} \cdot W_E W_Q W_K^\top W_E^\top$ computed for all heads
+        at 126k and 196k; L0H1 develops a token-identity matching circuit at
+        Stage~2 (diagonal-dominant node-token subblock); routing interpreted as
+        ``find edges involving the destination node'' --- the backward search
+        first step; crystallization is simultaneous with L0H1's OV growth;
+        L0H0 has no structured routing; L1H0/L1H1 show PAD self-attraction
+        (Findings~19--22, Section~\ref{sec:qk-analysis}).
+      \item[3.7 (Done)] Logit lens: per-category accuracy (dist=1/2/3/INF) at
+        embed\_only, after\_L0, and full\_model depths; 126k and 196k;
+        Layer~0 alone handles 77.9\% of dist=1; Layer~1 is decisive for
+        dist=2 (+69.6 pp) and hurts dist=3 ($-23.8$ pp); partial
+        two-step backward BFS hypothesis confirmed as the best algorithmic
+        account the data support (Findings~23--28,
+        Section~\ref{sec:logit-lens}).
+      \item[3.8 (Done)] L0H1 OV circuit at 196k: full $8 \times 8$ token-type
+        matrix computed; node-conditioned distance prior (nodes~2/3 push
+        toward dist=1; node~0 toward dist=3); impossible-answer tokens
+        (0, EDGE, QRY, PAD) grouped at identical values in every row; value
+        component partially structured before Stage~2 while QK crystallized
+        at Stage~2 (components evolved on different schedules); token-type
+        magnitudes are small (ranges 0.013--0.034) indicating positional
+        value-vector component carries the richer structural signal
+        (Findings~29--31, Section~\ref{sec:l0h1-ov}).
+        Complete algorithmic narrative written in
+        Section~\ref{sec:algorithm-narrative}: partial two-step backward BFS
+        confirmed.  \textbf{Phase~3 complete.}
     \end{description}
-  \item[Phase 4 (TODO)] Experiments + writeup: does the model learn BFS? Are
-    there forward/backward reachability circuits? How does the circuit form
-    during the grokking transition?
+  \item[Phase 4 (TODO)] Writeup: the answer to ``does the model learn BFS?''
+    is yes --- a partial two-step backward BFS, one layer per step.  Phase~4
+    should structure the Phase~3 findings into a paper-format narrative:
+    Introduction, Related Work (grokking + circuits framework), Method, the
+    two-stage grokking story, the algorithmic characterization, limitations
+    (distance-3, positional OV component uncharacterized), and Discussion.
 \end{description}
 
 % =============================================================================
@@ -2261,6 +3224,12 @@ Test & What it checks \\
   \textit{A Mathematical Framework for Transformer Circuits.}
   Transformer Circuits Thread, 2021.
   \url{https://transformer-circuits.pub/2021/framework/index.html}
+
+\bibitem{nostalgebraist2020}
+  nostalgebraist.
+  \textit{Interpreting GPT: the logit lens.}
+  LessWrong, 2020.
+  \url{https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens}
 \end{thebibliography}
 
 \end{document}
