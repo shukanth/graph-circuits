@@ -10,12 +10,15 @@ The central question: **what algorithm does the model actually learn?**
 
 The fully trained model implements a **partial two-step backward BFS from the destination node**, one BFS step per layer.
 
-- **Layer 0** (head L0H1): a token-identity QK circuit routes the destination position's attention toward every edge triplet in which `dst` appears. The OV contribution writes a neighborhood signal — where in the sequence dst's edges sit — into the residual stream.
-- **Layer 1**: reads that signal and checks whether `src` can reach any of `dst`'s direct predecessors. This handles distance-1 (direct connection confirmed) and distance-2 (one intermediate hop confirmed) well, and correctly identifies unreachability (INF). Distance-3 paths exceed the architecture's depth and are systematically misclassified.
+- **Layer 0** (head L0H1): a token-identity QK circuit routes the destination position's attention toward every edge triplet containing `dst`. The OV contribution writes neighborhood information into the residual stream, allowing the model to answer ~78% of distance-1 queries correctly after Layer 0 alone.
+- **Layer 1**: reads that signal and checks whether `src` can reach any of `dst`'s direct predecessors in one hop. This handles distance-1 (99.4% val accuracy) and distance-2 (87.0%) well, and correctly identifies unreachability (INF, 96.2%). Distance-3 paths (23.8%) exceed the architecture's depth and are systematically degraded by Layer 1, which cannot perform a third BFS step.
 
-The training curve shows two accuracy jumps (a double-grokking). These are mechanistically distinct:
-- **Stage 1** (steps 114k–126k): Layer 1 discovers a statistical shortcut — attending to PAD-token positions injects a constant logit bias toward longer distances and INF. This is a matrix-alignment event invisible in individual weight norms.
-- **Stage 2** (steps 188k–196k): the shortcut is partially dismantled and replaced by the genuine BFS circuit above.
+Training shows two accuracy jumps — a double-grokking. These are mechanistically distinct:
+
+- **Stage 1** (steps 114k–126k): Layer 1 discovers a statistical shortcut — attending to PAD-token positions injects a constant logit bias toward longer distances and INF. This is a matrix-alignment event, invisible in individual weight norms, and causally confirmed by ablation (−2.9% accuracy when PAD-position attention is zeroed at step 126k).
+- **Stage 2** (steps 188k–196k): the shortcut is partially dismantled and replaced by the genuine BFS circuit above. L0H1's OV circuit norm grows +97% during this window.
+
+The research paper writeup is in `notebooks/writeup.tex`.
 
 ---
 
@@ -27,7 +30,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Requires Python 3.11+. GPU training uses Apple Silicon Metal via `jax-metal`; all interpretability scripts run on CPU.
+Requires Python 3.11+. Training runs on CPU (Apple Silicon Metal backend disabled due to XLA compatibility). All interpretability scripts run on CPU.
 
 ---
 
@@ -35,33 +38,48 @@ Requires Python 3.11+. GPU training uses Apple Silicon Metal via `jax-metal`; al
 
 ```
 src/
-  data/          graph generation, tokenization, dataset assembly
-  model/         2-layer attention-only transformer (Flax Linen)
-  train/         JAX/Optax training loop, checkpointing, W&B logging
-  interp/        interpretability toolkit (Phase 3)
-    weight_analysis.py   Frobenius norm trajectories across checkpoints
-    attention_viz.py     attention pattern visualization, probe comparisons
-    ov_circuit.py        OV circuit matrices, PAD value analysis, QK circuits
-    ablation.py          PAD-position ablation experiment (numpy forward pass)
-    logit_lens.py        per-layer accuracy by answer category
+  data/
+    graphs.py         random directed graph generation, NetworkX BFS ground truth
+    tokenizer.py      Vocab, encode/decode, sequence format
+    dataset.py        generate_dataset, Dataset dataclass, train/val split
+  model/
+    transformer.py    ModelConfig, MultiHeadAttention, ShortestPathTransformer
+  train/
+    trainer.py        TrainConfig, train_step, eval_step, checkpointing, W&B
+  interp/
+    weight_analysis.py    Frobenius norm trajectories across all checkpoints
+    attention_viz.py      attention pattern visualization, probe comparisons
+    ov_circuit.py         OV and QK circuit matrices, PAD value analysis
+    ablation.py           PAD-position ablation (numpy forward pass)
+    logit_lens.py         per-layer accuracy by answer category
 
 scripts/
   train.py              training entry point
+  diagnose.py           pipeline diagnostic (6 isolated tests for XLA bugs)
   run_ablation.py       PAD ablation across 4 checkpoints
   run_qk_analysis.py    QK circuit analysis (L0H1 at 126k vs 196k)
   run_logit_lens.py     logit lens — per-category accuracy breakdown
   run_l0h1_ov.py        L0H1 full OV circuit analysis
 
 notebooks/
-  documentation.tex     full technical writeup (the single source of truth)
-  weight_norms.png      norm trajectory plot
-  ov_circuits.png       OV circuit heatmaps (Stage 2 window)
-  qk_circuits.png       QK circuit heatmaps (126k vs 196k)
-  ov_l0_circuits.png    L0 OV circuit heatmaps
+  writeup.tex               research paper (Phase 4)
+  documentation.tex         full technical documentation (31 findings, all derivations)
+  weight_norms.png          norm trajectory plot (100 checkpoints, all heads)
+  weight_norms_table.txt    anchor checkpoint norm table
+  attention_patterns.png    6-probe × 3-checkpoint × 4-head attention grid
+  attention_190k_zoom.png   attention patterns zoomed to step 190k
+  ov_circuits.png           OV circuit heatmaps — Stage 2 window (126k/190k/196k)
+  ov_circuits_stage1.png    OV circuit heatmaps — Stage 1 window (100k/116k/126k)
+  ov_l0_circuits.png        L0 OV circuit heatmaps (126k vs 196k)
+  qk_circuits.png           QK circuit heatmaps (126k vs 196k)
 
 tests/
-  test_data.py          14 data pipeline tests
-  test_model.py         5 model tests
+  test_data.py     14 data pipeline tests
+  test_model.py    5 model tests
+
+refs/
+  Grokking.pdf
+  A Mathematical Framework for Transformer Circuits.pdf
 ```
 
 ---
@@ -69,45 +87,52 @@ tests/
 ## Training
 
 ```bash
-# Train Run 5 (n_nodes=4, weight_decay=0.4, 200k steps)
-python scripts/train.py
-
-# Checkpoints are saved to checkpoints/ every 2000 steps (gitignored)
+python scripts/train.py --n_nodes 4 --n_graphs 200 --weight_decay 0.4 --n_steps 200000
 ```
 
-The model is a 2-layer, 2-head attention-only transformer: `d_model=128`, `d_head=64`, 140,288 parameters. Target task: given a shuffled sequence of directed edge tokens plus a source and destination node, predict the shortest-path length (1, 2, 3, or INF).
+The analyzed run (`Run 5`) used `n_nodes=4`, `n_graphs=200`, `weight_decay=0.4`, `seed=0`, 200k steps. Checkpoints saved every 2,000 steps to `checkpoints/` (gitignored).
+
+**Model:** 2-layer, 2-head attention-only transformer. `d_model=128`, `d_head=64`, ~140k parameters. No MLP layers — every computation is an attention head, which makes full circuit-level analysis tractable.
+
+**Task:** given a shuffled sequence of directed edge tokens `[EDGE, u, v]` padded to fixed length, followed by `[QRY, src, dst]`, predict the shortest-path length from `src` to `dst` (tokens `1`, `2`, `3`, or `INF`).
 
 ---
 
 ## Interpretability pipeline
 
-Run these from the repository root after training.
+Run from the repository root after training.
 
 ```bash
 # Causal validation: does PAD-position attention carry the shortcut?
 python scripts/run_ablation.py
 
-# What does L0H1 attend to? (QK circuit)
+# What does L0H1 attend to? (QK circuit — token-identity routing)
 python scripts/run_qk_analysis.py
 
 # Which layer handles which distance category? (logit lens)
 python scripts/run_logit_lens.py
 
-# What does L0H1 write? (OV circuit)
+# What does L0H1 write to the residual stream? (OV circuit)
 python scripts/run_l0h1_ov.py
 ```
 
-The full technical documentation — circuit derivations, all 31 numbered findings, tables, and the algorithmic narrative — is in `notebooks/documentation.tex`.
+All four scripts load saved checkpoints from `checkpoints/` and write results to stdout. No GPU required.
+
+The full technical documentation — all 31 numbered findings, circuit derivations, weight norm tables, and the complete algorithmic narrative — is in `notebooks/documentation.tex`.
 
 ---
 
-## Task
+## Key results
 
-**Input:** a directed graph on 4 nodes, encoded as a shuffled sequence of `[EDGE, src, dst]` triplets padded to fixed length, followed by `[QRY, src, dst]`.
+| Category | After Layer 0 | Full model | Layer 1 Δ |
+|---|---|---|---|
+| dist=1 (n=181) | 77.9% | 99.4% | +21.5 pp |
+| dist=2 (n=92) | 17.4% | 87.0% | **+69.6 pp** |
+| dist=3 (n=21) | 47.6% | 23.8% | **−23.8 pp** |
+| INF (n=186) | 58.6% | 96.2% | +37.6 pp |
+| Overall | 57.5% | 92.5% | +35.0 pp |
 
-**Output:** the shortest-path length from src to dst (tokens `1`, `2`, `3`, or `INF`).
-
-Directed graphs are used deliberately: asymmetric reachability (`A→B` does not imply `B→A`) blocks symmetry shortcuts and forces the model to learn a richer algorithm.
+Step 196k, 480 validation examples. The −23.8 pp on dist=3 is an architectural constraint, not a training failure: a two-layer model cannot perform three BFS steps.
 
 ---
 
@@ -115,4 +140,5 @@ Directed graphs are used deliberately: asymmetric reachability (`A→B` does not
 
 - Power et al., *Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets*, arXiv:2201.02177, 2022.
 - Elhage et al., *A Mathematical Framework for Transformer Circuits*, Transformer Circuits Thread, 2021.
+- Cohen et al., *Spectral Journey: How Transformers Predict the Shortest Path*, 2025.
 - nostalgebraist, *Interpreting GPT: the logit lens*, LessWrong, 2020.
